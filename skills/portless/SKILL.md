@@ -80,7 +80,10 @@ One `portless.json` at the repo root. Portless discovers packages from `pnpm-wor
 ```json
 {
   "apps": {
-    "apps/web": { "name": "myapp" },
+    "apps/web": {
+      "name": "myapp",
+      "hostnameTemplate": "{{worktree}}.{{name}}.dev"
+    },
     "apps/api": { "name": "api.myapp" }
   }
 }
@@ -92,7 +95,7 @@ cd apps/web && portless   # start just one package
 portless --script start   # run "start" instead of "dev"
 ```
 
-The `apps` map is optional and only provides name overrides. Unlisted packages auto-discover with inferred names.
+The `apps` map is optional and only provides name or hostname-template overrides. Unlisted packages auto-discover with inferred names.
 
 Without an `apps` map, hostnames follow `<package>.<project>.localhost`. The project name comes from the most common npm scope (e.g. `@myorg/web` and `@myorg/api` produce `myorg`), falling back to the workspace root directory name. If a package's short name matches the project name, it uses the bare `<project>.localhost`.
 
@@ -284,16 +287,19 @@ Each `--tailscale` app is root-mounted on its own Tailscale HTTPS port (443, the
 
 Optional config file. Portless looks for it in the current directory.
 
-| Field     | Type    | Default                    | Description                                              |
-| --------- | ------- | -------------------------- | -------------------------------------------------------- |
-| `name`    | string  | inferred from package.json | Base app name (worktree prefix still applies)            |
-| `script`  | string  | `"dev"`                    | Name of a package.json script to run                     |
-| `appPort` | number  | auto-assigned              | Fixed port for the child process                         |
-| `proxy`   | boolean | auto-detected              | Whether to route through the proxy (`false` for tasks)   |
-| `apps`    | object  |                            | Overrides for workspace packages, keyed by relative path |
-| `turbo`   | boolean | `true`                     | Set `false` to use direct spawning instead of turborepo  |
+| Field              | Type    | Default                    | Description                                              |
+| ------------------ | ------- | -------------------------- | -------------------------------------------------------- |
+| `name`             | string  | inferred from package.json | Base app name (worktree prefix still applies)            |
+| `hostnameTemplate` | string  |                            | Hostname pattern. Supports `{{name}}` and `{{worktree}}` |
+| `script`           | string  | `"dev"`                    | Name of a package.json script to run                     |
+| `appPort`          | number  | auto-assigned              | Fixed port for the child process                         |
+| `proxy`            | boolean | auto-detected              | Whether to route through the proxy (`false` for tasks)   |
+| `apps`             | object  |                            | Overrides for workspace packages, keyed by relative path |
+| `turbo`            | boolean | `true`                     | Set `false` to use direct spawning instead of turborepo  |
 
-Each `apps` entry has the same shape (`name`, `script`, `appPort`, `proxy`). When `apps` is present, top-level fields apply only in single-app mode.
+Each `apps` entry has the same shape (`name`, `hostnameTemplate`, `script`, `appPort`, `proxy`). When `apps` is present, top-level fields apply only in single-app mode.
+
+`hostnameTemplate` is evaluated before portless adds the proxy TLD. `{{name}}` is the configured or inferred app name and `{{worktree}}` is the linked-worktree branch prefix. If there is no worktree prefix, its complete dot-delimited label is removed. For example, `{{worktree}}.{{name}}.dev` resolves to `myapp.dev.localhost` in the primary checkout and `feature-auth.myapp.dev.localhost` in a linked worktree.
 
 ### package.json "portless" key
 
@@ -303,7 +309,7 @@ Instead of a separate `portless.json`, you can add a `"portless"` key to your `p
 { "portless": "myapp" }
 ```
 
-An object supports all per-app fields (`name`, `script`, `appPort`, `proxy`):
+An object supports all per-app fields (`name`, `hostnameTemplate`, `script`, `appPort`, `proxy`):
 
 ```json
 { "portless": { "name": "myapp", "script": "dev:app" } }

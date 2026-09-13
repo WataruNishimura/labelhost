@@ -65,7 +65,10 @@ One `portless.json` at the repo root covers all workspace packages. Portless dis
 ```json
 {
   "apps": {
-    "apps/web": { "name": "myapp" },
+    "apps/web": {
+      "name": "myapp",
+      "hostnameTemplate": "{{worktree}}.{{name}}.dev"
+    },
     "apps/api": { "name": "api.myapp" }
   }
 }
@@ -76,20 +79,23 @@ portless        # from repo root: starts all workspace packages with a "dev" scr
 cd apps/web && portless   # start just one package
 ```
 
-The `apps` map is optional and only needed for name overrides. Packages not listed still auto-discover with names inferred from their `package.json`.
+The `apps` map is optional and only needed for name or hostname-template overrides. Packages not listed still auto-discover with names inferred from their `package.json`.
 
 Without an `apps` map, hostnames follow the `<package>.<project>.localhost` convention. The project name comes from the most common npm scope across workspace packages (e.g. `@myorg/web` and `@myorg/api` produce `myorg`), falling back to the workspace root directory name. If a package's short name matches the project name, it gets the bare `<project>.localhost` without duplication.
 
 ### Config fields
 
-| Field     | Type    | Default  | Description                                               |
-| --------- | ------- | -------- | --------------------------------------------------------- |
-| `name`    | string  | inferred | Base app name. Worktree prefix still applies.             |
-| `script`  | string  | `"dev"`  | Name of a `package.json` script to run.                   |
-| `appPort` | number  | auto     | Fixed port for the child process.                         |
-| `proxy`   | boolean | auto     | Whether to route through the proxy. Auto-detected.        |
-| `apps`    | object  |          | Overrides for workspace packages, keyed by relative path. |
-| `turbo`   | boolean | `true`   | Set `false` to use direct spawning instead of turborepo.  |
+| Field              | Type    | Default  | Description                                               |
+| ------------------ | ------- | -------- | --------------------------------------------------------- |
+| `name`             | string  | inferred | Base app name. Worktree prefix still applies.             |
+| `hostnameTemplate` | string  |          | Hostname pattern. Supports `{{name}}` and `{{worktree}}`. |
+| `script`           | string  | `"dev"`  | Name of a `package.json` script to run.                   |
+| `appPort`          | number  | auto     | Fixed port for the child process.                         |
+| `proxy`            | boolean | auto     | Whether to route through the proxy. Auto-detected.        |
+| `apps`             | object  |          | Overrides for workspace packages, keyed by relative path. |
+| `turbo`            | boolean | `true`   | Set `false` to use direct spawning instead of turborepo.  |
+
+`hostnameTemplate` is evaluated before portless adds the proxy TLD. `{{name}}` is the configured or inferred app name and `{{worktree}}` is the linked-worktree branch prefix. If there is no worktree prefix, its complete dot-delimited label is removed. For example, `{{worktree}}.{{name}}.dev` resolves to `myapp.dev.localhost` in the primary checkout and `feature-auth.myapp.dev.localhost` in a linked worktree.
 
 ### package.json "portless" key
 
@@ -102,7 +108,7 @@ Instead of a separate `portless.json`, you can add a `"portless"` key to your `p
 }
 ```
 
-An object supports all per-app fields (`name`, `script`, `appPort`, `proxy`):
+An object supports all per-app fields (`name`, `hostnameTemplate`, `script`, `appPort`, `proxy`):
 
 ```json
 {

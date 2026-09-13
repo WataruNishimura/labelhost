@@ -107,6 +107,7 @@ describe("CLI", () => {
       expect(stdout).toContain("--foreground");
       expect(stdout).toContain("PORTLESS_STATE_DIR");
       expect(stdout).toContain("PORTLESS_URL");
+      expect(stdout).toContain("hostnameTemplate");
       expect(stdout).toContain("portless clean");
     });
 
@@ -950,6 +951,16 @@ describe("CLI", () => {
       const { status, stdout } = run(["get", "api.backend"], { env: getEnv() });
       expect(status).toBe(0);
       expect(stdout.trim()).toMatch(/^https?:\/\/api\.backend\.localhost(:\d+)?$/);
+    });
+
+    it("applies hostnameTemplate from config", () => {
+      fs.writeFileSync(
+        path.join(tmpDir, "portless.json"),
+        JSON.stringify({ hostnameTemplate: "{{name}}.preview" })
+      );
+      const { status, stdout } = run(["get", "backend"], { cwd: tmpDir, env: getEnv() });
+      expect(status).toBe(0);
+      expect(stdout.trim()).toMatch(/^https?:\/\/backend\.preview\.localhost(:\d+)?$/);
     });
 
     it("rejects unknown flags", () => {
