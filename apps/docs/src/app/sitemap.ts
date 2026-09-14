@@ -1,7 +1,7 @@
 import type { MetadataRoute } from "next";
 import { allDocsPages } from "@/lib/docs-navigation";
 
-const baseUrl = "https://portless.sh";
+const baseUrl = "https://labelhost.sh";
 
 export default function sitemap(): MetadataRoute.Sitemap {
   return allDocsPages.map((page) => ({

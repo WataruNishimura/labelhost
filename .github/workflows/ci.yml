@@ -70,13 +70,13 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
           $PSNativeCommandUseErrorActionPreference = $true
-          $stateDir = "C:\portless-ci-state"
-          node packages/portless/dist/cli.js service install `
+          $stateDir = "C:\labelhost-ci-state"
+          node packages/labelhost/dist/cli.js service install `
             --no-tls `
             --port 18080 `
             --state-dir $stateDir
 
-          $task = Get-ScheduledTask -TaskName "Portless Proxy"
+          $task = Get-ScheduledTask -TaskName "Labelhost Proxy"
           if ([string]$task.Settings.ExecutionTimeLimit -ne "PT0S") {
             throw "Expected zero execution time limit, got $($task.Settings.ExecutionTimeLimit)"
           }
@@ -95,8 +95,8 @@ jobs:
             throw "Expected cmd.exe action, got $($task.Actions.Execute)"
           }
 
-          Export-ScheduledTask -TaskName "Portless Proxy" | Set-Content portless-task.xml
-          if ((Get-Content portless-task.xml -Raw) -notmatch "<ExecutionTimeLimit>PT0S</ExecutionTimeLimit>") {
+          Export-ScheduledTask -TaskName "Labelhost Proxy" | Set-Content labelhost-task.xml
+          if ((Get-Content labelhost-task.xml -Raw) -notmatch "<ExecutionTimeLimit>PT0S</ExecutionTimeLimit>") {
             throw "Exported task XML does not contain PT0S"
           }
 
@@ -109,11 +109,11 @@ jobs:
             Start-Sleep -Milliseconds 500
           }
           if (-not $listening) {
-            schtasks /Query /TN "Portless Proxy" /FO LIST /V
-            throw "Portless service did not listen on port 18080"
+            schtasks /Query /TN "Labelhost Proxy" /FO LIST /V
+            throw "Labelhost service did not listen on port 18080"
           }
 
-          node packages/portless/dist/cli.js service status | Tee-Object service-status.txt
+          node packages/labelhost/dist/cli.js service status | Tee-Object service-status.txt
 
       - name: Upload Windows service evidence
         if: always()
@@ -121,7 +121,7 @@ jobs:
         with:
           name: windows-service-evidence
           path: |
-            portless-task.xml
+            labelhost-task.xml
             service-status.txt
 
       - name: Uninstall Windows service
@@ -130,4 +130,4 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
           $PSNativeCommandUseErrorActionPreference = $true
-          node packages/portless/dist/cli.js service uninstall
+          node packages/labelhost/dist/cli.js service uninstall

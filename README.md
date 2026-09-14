@@ -1,10 +1,10 @@
-# portless
+# labelhost
 
 Replace port numbers with stable, named .localhost URLs for local development. For humans and agents.
 
 ```diff
 - "dev": "next dev"                  # http://localhost:3000
-+ "dev": "portless run next dev"     # https://myapp.localhost
++ "dev": "labelhost run next dev"     # https://myapp.localhost
 ```
 
 ## Install
@@ -12,57 +12,57 @@ Replace port numbers with stable, named .localhost URLs for local development. F
 **Global (recommended):**
 
 ```bash
-npm install -g portless
+npm install -g labelhost
 ```
 
 **Or as a project dev dependency:**
 
 ```bash
-npm install -D portless
+npm install -D labelhost
 ```
 
-> portless is pre-1.0. When installed per-project, different contributors may run different versions. The state directory format may change between releases, which can require re-running `portless trust`.
+> labelhost is pre-1.0. When installed per-project, different contributors may run different versions. The state directory format may change between releases, which can require re-running `labelhost trust`.
 
 ## Run your app
 
 ```bash
-portless myapp next dev
+labelhost myapp next dev
 # -> https://myapp.localhost
 ```
 
-HTTPS with HTTP/2 is enabled by default. On first run, portless generates a local CA, trusts it, and binds port 443 (auto-elevates with sudo on macOS/Linux). Use `--no-tls` for plain HTTP.
+HTTPS with HTTP/2 is enabled by default. On first run, labelhost generates a local CA, trusts it, and binds port 443 (auto-elevates with sudo on macOS/Linux). Use `--no-tls` for plain HTTP.
 
-The proxy auto-starts when you run an app. A random port (4000-4999) is assigned via the `PORT` environment variable. Most frameworks (Next.js, Express, Nuxt, etc.) respect this automatically. For frameworks that ignore `PORT` (Vite, VitePlus, Astro, React Router, Angular, Expo, React Native), portless auto-injects the right `--port` flag and, when needed, a matching `--host` flag. Injection reaches through a package script whose command starts with the framework or a known runner (`"dev": "vite"`, `"dev": "bunx vite"`). Only the framework's server commands get the flags (`dev`, `serve`, `preview`, `start`, a bare `vite`, or `vite [root]`); a command that does not serve, such as `vite build`, `vite optimize`, `vp test` or `astro check`, rejects them and is left alone. Expo connection modes (`--localhost`, `--lan`, `--tunnel`) are preserved while the assigned port is still injected. A script portless cannot classify is left alone too: a flag before the subcommand on a CLI whose flag grammar it does not track (`vp --mode dev build`). Portless also leaves a script alone when appending flags to it would not work: a compound command (`&&`, `|`, `;`), a trailing `#` comment, its own `--` option terminator, an env prefix (`NODE_ENV=production vite`), delegation to another script (`"dev": "npm run dev:vite"`), or runner flags before the script name (`bun run --bun dev`). Those keep their own port, so set it in the script yourself.
+The proxy auto-starts when you run an app. A random port (4000-4999) is assigned via the `PORT` environment variable. Most frameworks (Next.js, Express, Nuxt, etc.) respect this automatically. For frameworks that ignore `PORT` (Vite, VitePlus, Astro, React Router, Angular, Expo, React Native), labelhost auto-injects the right `--port` flag and, when needed, a matching `--host` flag. Injection reaches through a package script whose command starts with the framework or a known runner (`"dev": "vite"`, `"dev": "bunx vite"`). Only the framework's server commands get the flags (`dev`, `serve`, `preview`, `start`, a bare `vite`, or `vite [root]`); a command that does not serve, such as `vite build`, `vite optimize`, `vp test` or `astro check`, rejects them and is left alone. Expo connection modes (`--localhost`, `--lan`, `--tunnel`) are preserved while the assigned port is still injected. A script labelhost cannot classify is left alone too: a flag before the subcommand on a CLI whose flag grammar it does not track (`vp --mode dev build`). Labelhost also leaves a script alone when appending flags to it would not work: a compound command (`&&`, `|`, `;`), a trailing `#` comment, its own `--` option terminator, an env prefix (`NODE_ENV=production vite`), delegation to another script (`"dev": "npm run dev:vite"`), or runner flags before the script name (`bun run --bun dev`). Those keep their own port, so set it in the script yourself.
 
-When auto-starting, portless reuses the configuration (port, TLS, TLDs) from the most recent proxy run, so a restart or reboot does not silently revert to defaults. Explicit env vars (`PORTLESS_PORT`, `PORTLESS_HTTPS`, etc.) always take priority.
+When auto-starting, labelhost reuses the configuration (port, TLS, TLDs) from the most recent proxy run, so a restart or reboot does not silently revert to defaults. Explicit env vars (`LABELHOST_PORT`, `LABELHOST_HTTPS`, etc.) always take priority.
 
-Portless stores per-user state in `~/.portless`. When the proxy runs under sudo, it resolves this path from the invoking user's home so the proxy and unprivileged app processes share the same route registrations.
+Labelhost stores per-user state in `~/.labelhost`. When the proxy runs under sudo, it resolves this path from the invoking user's home so the proxy and unprivileged app processes share the same route registrations.
 
-In non-interactive environments (no TTY, or `CI=1`), portless exits with a descriptive error instead of prompting, so task runners like turborepo and CI scripts fail early with a clear message.
+In non-interactive environments (no TTY, or `CI=1`), labelhost exits with a descriptive error instead of prompting, so task runners like turborepo and CI scripts fail early with a clear message.
 
 ## Configuration
 
-Bare `portless` works out of the box. It runs the `"dev"` script from `package.json` through the proxy, inferring the app name from the package name, git root, or directory:
+Bare `labelhost` works out of the box. It runs the `"dev"` script from `package.json` through the proxy, inferring the app name from the package name, git root, or directory:
 
 ```bash
-portless        # -> runs "dev" script, https://<project>.localhost
+labelhost        # -> runs "dev" script, https://<project>.localhost
 ```
 
-Use an optional `portless.json` to override defaults:
+Use an optional `labelhost.json` to override defaults:
 
 ```json
 { "name": "myapp" }
 ```
 
 ```bash
-portless        # -> runs "dev" script, https://myapp.localhost
+labelhost        # -> runs "dev" script, https://myapp.localhost
 ```
 
 The script defaults to `"dev"`. The name is inferred from `package.json` if not set in config.
 
 ### Monorepo
 
-One `portless.json` at the repo root covers all workspace packages. Portless discovers packages from `pnpm-workspace.yaml`, or the `"workspaces"` field in `package.json` (npm, yarn, bun):
+One `labelhost.json` at the repo root covers all workspace packages. Labelhost discovers packages from `pnpm-workspace.yaml`, or the `"workspaces"` field in `package.json` (npm, yarn, bun):
 
 ```json
 {
@@ -77,8 +77,8 @@ One `portless.json` at the repo root covers all workspace packages. Portless dis
 ```
 
 ```bash
-portless        # from repo root: starts all workspace packages with a "dev" script
-cd apps/web && portless   # start just one package
+labelhost        # from repo root: starts all workspace packages with a "dev" script
+cd apps/web && labelhost   # start just one package
 ```
 
 The `apps` map is optional and only needed for name or hostname-template overrides. Packages not listed still auto-discover with names inferred from their `package.json`.
@@ -97,16 +97,16 @@ Without an `apps` map, hostnames follow the `<package>.<project>.localhost` conv
 | `apps`             | object  |          | Overrides for workspace packages, keyed by relative path. |
 | `turbo`            | boolean | `true`   | Set `false` to use direct spawning instead of turborepo.  |
 
-`hostnameTemplate` is evaluated before portless adds the proxy TLD. `{{name}}` is the configured or inferred app name and `{{worktree}}` is the linked-worktree branch prefix. If there is no worktree prefix, its complete dot-delimited label is removed. For example, `{{worktree}}.{{name}}.dev` resolves to `myapp.dev.localhost` in the primary checkout and `feature-auth.myapp.dev.localhost` in a linked worktree.
+`hostnameTemplate` is evaluated before labelhost adds the proxy TLD. `{{name}}` is the configured or inferred app name and `{{worktree}}` is the linked-worktree branch prefix. If there is no worktree prefix, its complete dot-delimited label is removed. For example, `{{worktree}}.{{name}}.dev` resolves to `myapp.dev.localhost` in the primary checkout and `feature-auth.myapp.dev.localhost` in a linked worktree.
 
-### package.json "portless" key
+### package.json "labelhost" key
 
-Instead of a separate `portless.json`, you can add a `"portless"` key to your `package.json`. A string value is shorthand for setting the name:
+Instead of a separate `labelhost.json`, you can add a `"labelhost"` key to your `package.json`. A string value is shorthand for setting the name:
 
 ```json
 {
   "name": "@myorg/web",
-  "portless": "myapp"
+  "labelhost": "myapp"
 }
 ```
 
@@ -115,52 +115,52 @@ An object supports all per-app fields (`name`, `hostnameTemplate`, `script`, `ap
 ```json
 {
   "name": "@myorg/web",
-  "portless": { "name": "myapp", "script": "dev:app" }
+  "labelhost": { "name": "myapp", "script": "dev:app" }
 }
 ```
 
-The `package.json` `"portless"` key takes precedence over `portless.json` app entries but is overridden by CLI flags.
+The `package.json` `"labelhost"` key takes precedence over `labelhost.json` app entries but is overridden by CLI flags.
 
 ### --script flag
 
 Override the default script for a single invocation:
 
 ```bash
-portless --script start       # run "start" instead of "dev"
-portless --script test        # run "test" instead of "dev"
+labelhost --script start       # run "start" instead of "dev"
+labelhost --script test        # run "test" instead of "dev"
 ```
 
 ### Turborepo
 
-To use portless with turborepo, put `portless` as the `dev` script and the real command in a separate script:
+To use labelhost with turborepo, put `labelhost` as the `dev` script and the real command in a separate script:
 
 ```json
 {
   "scripts": {
-    "dev": "portless",
+    "dev": "labelhost",
     "dev:app": "next dev"
   },
-  "portless": { "name": "myapp", "script": "dev:app" }
+  "labelhost": { "name": "myapp", "script": "dev:app" }
 }
 ```
 
-Turbo runs each package's `dev` script, which invokes portless. Portless reads the config, detects the package manager, and runs `pnpm run dev:app` (or yarn/bun/npm) through the proxy. No changes to `turbo.json` are needed.
+Turbo runs each package's `dev` script, which invokes labelhost. Labelhost reads the config, detects the package manager, and runs `pnpm run dev:app` (or yarn/bun/npm) through the proxy. No changes to `turbo.json` are needed.
 
-`pnpm dev` at the root works through turbo as usual. People without portless can run `pnpm run dev:app` directly.
+`pnpm dev` at the root works through turbo as usual. People without labelhost can run `pnpm run dev:app` directly.
 
 ## Use in package.json
 
-You can still use portless in `package.json` scripts:
+You can still use labelhost in `package.json` scripts:
 
 ```json
 {
   "scripts": {
-    "dev": "portless run next dev"
+    "dev": "labelhost run next dev"
   }
 }
 ```
 
-With a `portless.json`, you can simplify to:
+With a `labelhost.json`, you can simplify to:
 
 ```json
 {
@@ -170,17 +170,17 @@ With a `portless.json`, you can simplify to:
 }
 ```
 
-Then run `portless` or `portless run` to go through the proxy.
+Then run `labelhost` or `labelhost run` to go through the proxy.
 
 ## Subdomains
 
 Organize services with subdomains:
 
 ```bash
-portless api.myapp pnpm start
+labelhost api.myapp pnpm start
 # -> https://api.myapp.localhost
 
-portless docs.myapp next dev
+labelhost docs.myapp next dev
 # -> https://docs.myapp.localhost
 ```
 
@@ -188,31 +188,31 @@ By default, only explicitly registered subdomains are routed (strict mode). Use 
 
 ## Git Worktrees
 
-`portless run` automatically detects git worktrees. In a linked worktree, the branch name is prepended as a subdomain so each worktree gets its own URL without any config changes:
+`labelhost run` automatically detects git worktrees. In a linked worktree, the branch name is prepended as a subdomain so each worktree gets its own URL without any config changes:
 
 ```bash
 # Main worktree (no prefix)
-portless run next dev   # -> https://myapp.localhost
+labelhost run next dev   # -> https://myapp.localhost
 
 # Linked worktree on branch "fix-ui"
-portless run next dev   # -> https://fix-ui.myapp.localhost
+labelhost run next dev   # -> https://fix-ui.myapp.localhost
 ```
 
 Use `--name` to override the inferred base name while keeping the worktree prefix:
 
 ```bash
-portless run --name myapp next dev   # -> https://fix-ui.myapp.localhost
+labelhost run --name myapp next dev   # -> https://fix-ui.myapp.localhost
 ```
 
-Put `portless run` in your `package.json` once and it works everywhere. The main checkout uses the plain name, each worktree gets a unique subdomain. No collisions, no `--force`.
+Put `labelhost run` in your `package.json` once and it works everywhere. The main checkout uses the plain name, each worktree gets a unique subdomain. No collisions, no `--force`.
 
 ## Custom TLD
 
-By default, portless uses `.localhost` which auto-resolves to `127.0.0.1` in most browsers. If you prefer a different TLD (e.g. `.test`), use `--tld`:
+By default, labelhost uses `.localhost` which auto-resolves to `127.0.0.1` in most browsers. If you prefer a different TLD (e.g. `.test`), use `--tld`:
 
 ```bash
-portless proxy start --tld test
-portless myapp next dev
+labelhost proxy start --tld test
+labelhost myapp next dev
 # -> https://myapp.test
 ```
 
@@ -221,13 +221,13 @@ The proxy auto-syncs `/etc/hosts` for route hostnames (including `.test`), so th
 Repeat `--tld` to serve the same app names under multiple TLDs from one proxy:
 
 ```bash
-portless proxy start --tld localhost --tld test
-portless myapp next dev
+labelhost proxy start --tld localhost --tld test
+labelhost myapp next dev
 # -> https://myapp.localhost
 # -> https://myapp.test
 ```
 
-When multiple TLDs are configured, `PORTLESS_URL` uses the first TLD. `PORTLESS_TLD` also accepts a comma separated list, e.g. `PORTLESS_TLD=localhost,test`.
+When multiple TLDs are configured, `LABELHOST_URL` uses the first TLD. `LABELHOST_TLD` also accepts a comma separated list, e.g. `LABELHOST_TLD=localhost,test`.
 
 Recommended: `.test` (IANA-reserved, no collision risk). Avoid `.local` (conflicts with mDNS/Bonjour) and `.dev` (Google-owned, forces HTTPS via HSTS).
 
@@ -236,8 +236,8 @@ Recommended: `.test` (IANA-reserved, no collision risk). Avoid `.local` (conflic
 The `--tld` value accepts a lowercase DNS name (one or more dot-separated labels, no trailing dot), so a domain you own can be used as the "TLD". This gives local URLs the same structure as production, which keeps OAuth redirect URIs, cross-subdomain cookies, and host-based routing working the same way in both environments:
 
 ```bash
-portless proxy start --tld dev.example.com
-portless myapp next dev
+labelhost proxy start --tld dev.example.com
+labelhost myapp next dev
 # -> https://myapp.dev.example.com
 ```
 
@@ -252,7 +252,7 @@ Strict OAuth providers (Google, Apple) reject `.localhost` and `.test` redirect 
 ```mermaid
 flowchart TD
     Browser["Browser<br>myapp.localhost"]
-    Proxy["portless proxy<br>(port 80 or 443)"]
+    Proxy["labelhost proxy<br>(port 80 or 443)"]
     App1[":4123<br>myapp"]
     App2[":4567<br>api"]
 
@@ -261,8 +261,8 @@ flowchart TD
     Proxy --> App2
 ```
 
-1. **Start the proxy**: auto-starts when you run an app, or start explicitly with `portless proxy start`
-2. **Run apps**: `portless <name> <command>` assigns a free port and registers with the proxy
+1. **Start the proxy**: auto-starts when you run an app, or start explicitly with `labelhost proxy start`
+2. **Run apps**: `labelhost <name> <command>` assigns a free port and registers with the proxy
 3. **Access via URL**: `https://<name>.localhost` routes through the proxy to your app
 
 Outside LAN mode, the proxy and its HTTP redirect listener bind only to the IPv4 and IPv6 loopback addresses, `127.0.0.1` and `::1`. They do not accept connections through LAN, VPN, or other network interfaces.
@@ -273,51 +273,51 @@ HTTPS with HTTP/2 is enabled by default. Browsers limit HTTP/1.1 to 6 connection
 
 WebSockets work over both protocol versions, so dev server HMR (Next.js, Vite, etc.) works through the proxy: HTTP/1.1 `Upgrade` requests are forwarded as-is, and WebSockets opened over an HTTP/2 connection use extended CONNECT (RFC 8441).
 
-On first run, portless generates a local CA and adds it to your system trust store. No browser warnings. No manual setup.
+On first run, labelhost generates a local CA and adds it to your system trust store. No browser warnings. No manual setup.
 
 ```bash
 # Use your own certs (e.g., from mkcert)
-portless proxy start --cert ./cert.pem --key ./key.pem
+labelhost proxy start --cert ./cert.pem --key ./key.pem
 
 # Disable HTTPS (plain HTTP on port 80)
-portless proxy start --no-tls
+labelhost proxy start --no-tls
 
 # If you skipped the trust prompt on first run, trust the CA later
-portless trust
+labelhost trust
 ```
 
-On Linux, `portless trust` supports Debian/Ubuntu, Arch, Fedora/RHEL/CentOS, and openSUSE (via `update-ca-certificates` or `update-ca-trust`). On Windows, it uses `certutil` to add the CA to the system trust store. On WSL, it updates both the Linux trust store and the Windows current-user Root store so Windows browsers trust portless HTTPS certificates.
+On Linux, `labelhost trust` supports Debian/Ubuntu, Arch, Fedora/RHEL/CentOS, and openSUSE (via `update-ca-certificates` or `update-ca-trust`). On Windows, it uses `certutil` to add the CA to the system trust store. On WSL, it updates both the Linux trust store and the Windows current-user Root store so Windows browsers trust labelhost HTTPS certificates.
 
 ## Start at OS startup
 
 Install the proxy as an OS startup service so clean HTTPS URLs are available after reboot without starting the proxy from a terminal:
 
 ```bash
-portless service install
-portless service install --lan
-portless service install --wildcard
-PORTLESS_STATE_DIR=~/.portless-lan PORTLESS_LAN=1 portless service install
-portless service status
-portless service uninstall
+labelhost service install
+labelhost service install --lan
+labelhost service install --wildcard
+LABELHOST_STATE_DIR=~/.labelhost-lan LABELHOST_LAN=1 labelhost service install
+labelhost service status
+labelhost service uninstall
 ```
 
-The service uses portless defaults unless install options or `PORTLESS_*` environment variables are provided: HTTPS on port 443 with `.localhost` names. `service install` accepts the proxy options you would use with `proxy start`, including `--port`, `--no-tls`, `--lan`, `--ip`, `--tld`, `--wildcard`, `--cert`, and `--key`. Use `--state-dir <path>` or `PORTLESS_STATE_DIR=<path>` to choose where service state and logs are written.
+The service uses labelhost defaults unless install options or `LABELHOST_*` environment variables are provided: HTTPS on port 443 with `.localhost` names. `service install` accepts the proxy options you would use with `proxy start`, including `--port`, `--no-tls`, `--lan`, `--ip`, `--tld`, `--wildcard`, `--cert`, and `--key`. Use `--state-dir <path>` or `LABELHOST_STATE_DIR=<path>` to choose where service state and logs are written.
 
-The chosen service configuration is written into launchd, systemd, or Task Scheduler and reused after reboot. `portless service status` reports the installed port, HTTPS mode, TLDs, LAN mode, wildcard mode, and state directory. macOS and Linux install a root-owned service so port 443 can bind at boot. Windows installs a Task Scheduler startup task that runs as SYSTEM. Installation and removal may require administrator privileges. `portless clean` automatically removes the service.
+The chosen service configuration is written into launchd, systemd, or Task Scheduler and reused after reboot. `labelhost service status` reports the installed port, HTTPS mode, TLDs, LAN mode, wildcard mode, and state directory. macOS and Linux install a root-owned service so port 443 can bind at boot. Windows installs a Task Scheduler startup task that runs as SYSTEM. Installation and removal may require administrator privileges. `labelhost clean` automatically removes the service.
 
 ## LAN mode
 
 ```bash
-portless proxy start --lan
-portless proxy start --lan --https
-portless proxy start --lan --ip 192.168.1.42
+labelhost proxy start --lan
+labelhost proxy start --lan --https
+labelhost proxy start --lan --ip 192.168.1.42
 ```
 
-`--lan` explicitly binds the proxy to the IPv4 and IPv6 unspecified addresses, `0.0.0.0` and `::`, and switches to mDNS discovery. This makes services available as `<name>.local` to devices on the same network. Portless auto-detects your LAN IP and follows Wi-Fi/IP changes automatically, but you can pin another address with `--ip <address>` or by exporting `PORTLESS_LAN_IP`. Set `PORTLESS_LAN=1` in your shell (0/1 boolean) to make LAN mode the default whenever the proxy starts.
+`--lan` explicitly binds the proxy to the IPv4 and IPv6 unspecified addresses, `0.0.0.0` and `::`, and switches to mDNS discovery. This makes services available as `<name>.local` to devices on the same network. Labelhost auto-detects your LAN IP and follows Wi-Fi/IP changes automatically, but you can pin another address with `--ip <address>` or by exporting `LABELHOST_LAN_IP`. Set `LABELHOST_LAN=1` in your shell (0/1 boolean) to make LAN mode the default whenever the proxy starts.
 
-Portless remembers LAN mode via `proxy.lan`, so if you stop a LAN proxy and start it again, it stays in LAN mode. All proxy settings (port, TLS, TLDs, LAN) are persisted and reused on auto-start unless overridden by explicit flags or env vars. Use `PORTLESS_LAN=0` for one start to switch back to `.localhost` mode. If a proxy is already running with different explicit LAN/TLS/TLD settings, portless warns and asks you to stop it first.
+Labelhost remembers LAN mode via `proxy.lan`, so if you stop a LAN proxy and start it again, it stays in LAN mode. All proxy settings (port, TLS, TLDs, LAN) are persisted and reused on auto-start unless overridden by explicit flags or env vars. Use `LABELHOST_LAN=0` for one start to switch back to `.localhost` mode. If a proxy is already running with different explicit LAN/TLS/TLD settings, labelhost warns and asks you to stop it first.
 
-LAN mode depends on the system mDNS tools that portless already spawns: macOS ships with `dns-sd`, while Linux uses `avahi-publish-address` from `avahi-utils` (install via `sudo apt install avahi-utils` or your distro’s equivalent). If the command is missing or your network isn’t reachable, `portless proxy start --lan` prints the relevant error and exits.
+LAN mode depends on the system mDNS tools that labelhost already spawns: macOS ships with `dns-sd`, while Linux uses `avahi-publish-address` from `avahi-utils` (install via `sudo apt install avahi-utils` or your distro’s equivalent). If the command is missing or your network isn’t reachable, `labelhost proxy start --lan` prints the relevant error and exits.
 
 ### Framework notes
 
@@ -330,14 +330,14 @@ LAN mode depends on the system mDNS tools that portless already spawns: macOS sh
   };
   ```
 
-- **Expo / React Native**: portless always injects `--port`. React Native also gets `--host 127.0.0.1`. Expo gets `--host localhost` outside LAN mode, but in LAN mode portless leaves Metro on its default LAN host behavior instead of forcing `--host` or `HOST`.
+- **Expo / React Native**: labelhost always injects `--port`. React Native also gets `--host 127.0.0.1`. Expo gets `--host localhost` outside LAN mode, but in LAN mode labelhost leaves Metro on its default LAN host behavior instead of forcing `--host` or `HOST`.
 
 ## Tailscale sharing
 
 Share your dev server with teammates on your [Tailscale](https://tailscale.com) network:
 
 ```bash
-portless myapp --tailscale next dev
+labelhost myapp --tailscale next dev
 # -> https://myapp.localhost           (local)
 # -> https://devbox.yourteam.ts.net    (tailnet)
 ```
@@ -345,20 +345,20 @@ portless myapp --tailscale next dev
 Each `--tailscale` app is root-mounted on its own Tailscale HTTPS port, so no framework `basePath` configuration is needed. The first app gets port 443, subsequent apps get 8443, 8444, etc.
 
 ```bash
-portless myapp --tailscale next dev     # -> https://devbox.ts.net
-portless api --tailscale pnpm start     # -> https://devbox.ts.net:8443
+labelhost myapp --tailscale next dev     # -> https://devbox.ts.net
+labelhost api --tailscale pnpm start     # -> https://devbox.ts.net:8443
 ```
 
 Use `--funnel` to expose your dev server to the public internet via [Tailscale Funnel](https://tailscale.com/kb/1223/funnel/):
 
 ```bash
-portless myapp --funnel next dev
+labelhost myapp --funnel next dev
 # -> https://devbox.yourteam.ts.net    (public)
 ```
 
-Tailscale HTTPS certificates must be enabled before `--tailscale` or `--funnel` can register HTTPS URLs. Funnel must also be enabled for the tailnet and node before `--funnel` can register the public URL. If either setting is missing, portless exits before starting the child process.
+Tailscale HTTPS certificates must be enabled before `--tailscale` or `--funnel` can register HTTPS URLs. Funnel must also be enabled for the tailnet and node before `--funnel` can register the public URL. If either setting is missing, labelhost exits before starting the child process.
 
-Set `PORTLESS_TAILSCALE=1` in your shell profile or `.env` to share every app by default. `portless list` shows both local and tailnet URLs. Tailscale serve registrations are cleaned up automatically when the app exits.
+Set `LABELHOST_TAILSCALE=1` in your shell profile or `.env` to share every app by default. `labelhost list` shows both local and tailnet URLs. Tailscale serve registrations are cleaned up automatically when the app exits.
 
 Requires the Tailscale CLI to be installed and connected (`tailscale up`), with Tailscale HTTPS certificates enabled.
 
@@ -367,51 +367,51 @@ Requires the Tailscale CLI to be installed and connected (`tailscale up`), with 
 Expose your dev server to the public internet with [ngrok](https://ngrok.com):
 
 ```bash
-portless myapp --ngrok next dev
+labelhost myapp --ngrok next dev
 # -> https://myapp.localhost           (local)
 # -> https://abc123.ngrok.app          (public)
 ```
 
-Set `PORTLESS_NGROK=1` in your shell profile or `.env` to enable ngrok by default when portless runs an app. `portless list` shows both local and ngrok URLs. The ngrok tunnel is cleaned up automatically when the app exits.
+Set `LABELHOST_NGROK=1` in your shell profile or `.env` to enable ngrok by default when labelhost runs an app. `labelhost list` shows both local and ngrok URLs. The ngrok tunnel is cleaned up automatically when the app exits.
 
 Requires the ngrok CLI to be installed and authenticated. If ngrok reports an authentication error, run `ngrok config add-authtoken <token>` and try again.
 
 ## Commands
 
 ```bash
-portless                        # Run dev script through proxy
-portless                        # From monorepo root: run all workspace packages
-portless run [--name <name>] [cmd] [args...]  # Infer name, run through proxy
-portless <name> <cmd> [args...]  # Run app at https://<name>.localhost
-portless alias <name> <port>     # Register a static route (e.g. for Docker)
-portless alias <name> <port> --force  # Overwrite an existing route
-portless alias --remove <name>   # Remove a static route
-portless list                    # Show active routes
-portless doctor                  # Check proxy, routes, DNS, and CA trust
-portless trust                   # Add local CA to system trust store
-portless clean                   # Remove state, CA trust entry, and hosts block
-portless prune                   # Kill orphaned dev servers from crashed sessions
-portless hosts sync              # Add routes to /etc/hosts (fixes Safari)
-portless hosts clean             # Remove portless entries from /etc/hosts
+labelhost                        # Run dev script through proxy
+labelhost                        # From monorepo root: run all workspace packages
+labelhost run [--name <name>] [cmd] [args...]  # Infer name, run through proxy
+labelhost <name> <cmd> [args...]  # Run app at https://<name>.localhost
+labelhost alias <name> <port>     # Register a static route (e.g. for Docker)
+labelhost alias <name> <port> --force  # Overwrite an existing route
+labelhost alias --remove <name>   # Remove a static route
+labelhost list                    # Show active routes
+labelhost doctor                  # Check proxy, routes, DNS, and CA trust
+labelhost trust                   # Add local CA to system trust store
+labelhost clean                   # Remove state, CA trust entry, and hosts block
+labelhost prune                   # Kill orphaned dev servers from crashed sessions
+labelhost hosts sync              # Add routes to /etc/hosts (fixes Safari)
+labelhost hosts clean             # Remove labelhost entries from /etc/hosts
 
-# Disable portless (run command directly)
+# Disable labelhost (run command directly)
 PORTLESS=0 pnpm dev              # Bypasses proxy, uses default port
 
 # Proxy control
-portless proxy start             # Start the HTTPS proxy (port 443, daemon)
-portless proxy start --no-tls    # Start without HTTPS (port 80)
-portless proxy start --lan       # Start in LAN mode (mDNS .local for devices)
-portless proxy start -p 1355     # Start on a custom port (no sudo)
-portless proxy start --foreground  # Start in foreground (for debugging)
-portless proxy start --wildcard  # Allow unregistered subdomains to fall back to parent
-portless proxy stop              # Stop the proxy
+labelhost proxy start             # Start the HTTPS proxy (port 443, daemon)
+labelhost proxy start --no-tls    # Start without HTTPS (port 80)
+labelhost proxy start --lan       # Start in LAN mode (mDNS .local for devices)
+labelhost proxy start -p 1355     # Start on a custom port (no sudo)
+labelhost proxy start --foreground  # Start in foreground (for debugging)
+labelhost proxy start --wildcard  # Allow unregistered subdomains to fall back to parent
+labelhost proxy stop              # Stop the proxy
 
 # OS startup service
-portless service install         # Start HTTPS proxy when the OS starts
-portless service install --lan   # Start service in LAN mode
-portless service install --wildcard  # Persist wildcard routing in the service
-portless service status          # Show service and proxy status
-portless service uninstall       # Remove the startup service
+labelhost service install         # Start HTTPS proxy when the OS starts
+labelhost service install --lan   # Start service in LAN mode
+labelhost service install --wildcard  # Persist wildcard routing in the service
+labelhost service status          # Show service and proxy status
+labelhost service uninstall       # Remove the startup service
 ```
 
 ### Options
@@ -441,39 +441,39 @@ portless service uninstall       # Remove the startup service
 
 ```
 # Configuration
-PORTLESS_PORT=<number>           Override the default proxy port
-PORTLESS_APP_PORT=<number>       Use a fixed port for the app (same as --app-port)
-PORTLESS_HTTPS=0                 Disable HTTPS (same as --no-tls)
-PORTLESS_LAN=1                   Enable LAN mode when set to 1 (auto-detects LAN IP)
-PORTLESS_LAN_IP=<address>        Pin a specific LAN IP for LAN mode
-PORTLESS_TLD=<tld>[,<tld>]       Use one or more TLDs (e.g. localhost,test)
-PORTLESS_WILDCARD=1              Allow unregistered subdomains to fall back to parent route
-PORTLESS_SYNC_HOSTS=0            Disable auto-sync of /etc/hosts (on by default)
-PORTLESS_TAILSCALE=1             Share apps on your Tailscale network (same as --tailscale)
-PORTLESS_FUNNEL=1                Share apps publicly via Tailscale Funnel (same as --funnel)
-PORTLESS_NGROK=1                 Share apps publicly via ngrok (same as --ngrok)
-PORTLESS_STATE_DIR=<path>        Override the state directory
+LABELHOST_PORT=<number>           Override the default proxy port
+LABELHOST_APP_PORT=<number>       Use a fixed port for the app (same as --app-port)
+LABELHOST_HTTPS=0                 Disable HTTPS (same as --no-tls)
+LABELHOST_LAN=1                   Enable LAN mode when set to 1 (auto-detects LAN IP)
+LABELHOST_LAN_IP=<address>        Pin a specific LAN IP for LAN mode
+LABELHOST_TLD=<tld>[,<tld>]       Use one or more TLDs (e.g. localhost,test)
+LABELHOST_WILDCARD=1              Allow unregistered subdomains to fall back to parent route
+LABELHOST_SYNC_HOSTS=0            Disable auto-sync of /etc/hosts (on by default)
+LABELHOST_TAILSCALE=1             Share apps on your Tailscale network (same as --tailscale)
+LABELHOST_FUNNEL=1                Share apps publicly via Tailscale Funnel (same as --funnel)
+LABELHOST_NGROK=1                 Share apps publicly via ngrok (same as --ngrok)
+LABELHOST_STATE_DIR=<path>        Override the state directory
 
 # Injected into child processes
 PORT                             Ephemeral port the child should listen on
 HOST                             Usually 127.0.0.1 (omitted for Expo in LAN mode)
-PORTLESS_URL                     Primary public URL (e.g. https://myapp.localhost)
-PORTLESS_TAILSCALE_URL           Tailscale URL of the app (when --tailscale is active)
-PORTLESS_NGROK_URL               ngrok URL of the app (when --ngrok is active)
-NODE_EXTRA_CA_CERTS              Path to the portless CA (when HTTPS is active)
+LABELHOST_URL                     Primary public URL (e.g. https://myapp.localhost)
+LABELHOST_TAILSCALE_URL           Tailscale URL of the app (when --tailscale is active)
+LABELHOST_NGROK_URL               ngrok URL of the app (when --ngrok is active)
+NODE_EXTRA_CA_CERTS              Path to the labelhost CA (when HTTPS is active)
 ```
 
-> **Reserved names:** `run`, `get`, `alias`, `hosts`, `list`, `doctor`, `trust`, `clean`, `prune`, `proxy`, and `service` are subcommands and cannot be used as app names directly. Use `portless run <cmd>` to infer the name from your project, or `portless --name <name> <cmd>` to force any name including reserved ones.
+> **Reserved names:** `run`, `get`, `alias`, `hosts`, `list`, `doctor`, `trust`, `clean`, `prune`, `proxy`, and `service` are subcommands and cannot be used as app names directly. Use `labelhost run <cmd>` to infer the name from your project, or `labelhost --name <name> <cmd>` to force any name including reserved ones.
 
 ## Uninstall / reset
 
-To remove portless data from your machine (proxy state under `~/.portless` and the system state directory, the local CA from the OS trust store when portless installed it, and the portless block in `/etc/hosts`):
+To remove labelhost data from your machine (proxy state under `~/.labelhost` and the system state directory, the local CA from the OS trust store when labelhost installed it, and the labelhost block in `/etc/hosts`):
 
 ```bash
-portless clean
+labelhost clean
 ```
 
-macOS/Linux may prompt for `sudo`. Custom certificate paths passed with `--cert` and `--key` are not deleted. If trust-store removal fails, portless retains its CA certificate and key so a later `portless clean` can safely retry.
+macOS/Linux may prompt for `sudo`. Custom certificate paths passed with `--cert` and `--key` are not deleted. If trust-store removal fails, labelhost retains its CA certificate and key so a later `labelhost clean` can safely retry.
 
 ## Safari / DNS
 
@@ -482,19 +482,19 @@ macOS/Linux may prompt for `sudo`. Custom certificate paths passed with `--cert`
 If Safari can't find your `.localhost` URL:
 
 ```bash
-portless hosts sync    # Add current routes to /etc/hosts
-portless hosts clean   # Clean up later
+labelhost hosts sync    # Add current routes to /etc/hosts
+labelhost hosts clean   # Clean up later
 ```
 
-Auto-syncs `/etc/hosts` for route hostnames by default (`.localhost`, custom TLDs, LAN `.local`). Set `PORTLESS_SYNC_HOSTS=0` to disable.
+Auto-syncs `/etc/hosts` for route hostnames by default (`.localhost`, custom TLDs, LAN `.local`). Set `LABELHOST_SYNC_HOSTS=0` to disable.
 
 ## Troubleshooting
 
-Run `portless doctor` to inspect local health without changing state. It checks Node.js, the state directory, proxy liveness, route entries, HTTPS CA trust, hostname resolution, and LAN mode prerequisites, then prints suggested fixes.
+Run `labelhost doctor` to inspect local health without changing state. It checks Node.js, the state directory, proxy liveness, route entries, HTTPS CA trust, hostname resolution, and LAN mode prerequisites, then prints suggested fixes.
 
-## Proxying Between Portless Apps
+## Proxying Between Labelhost Apps
 
-If your frontend dev server (e.g. Vite, webpack) proxies API requests to another portless app, make sure the proxy rewrites the `Host` header. Without this, portless routes the request back to the frontend in an infinite loop.
+If your frontend dev server (e.g. Vite, webpack) proxies API requests to another labelhost app, make sure the proxy rewrites the `Host` header. Without this, labelhost routes the request back to the frontend in an infinite loop.
 
 **Vite** (`vite.config.ts`):
 
@@ -522,13 +522,13 @@ devServer: {
 }
 ```
 
-Portless automatically sets `NODE_EXTRA_CA_CERTS` in child processes so Node.js trusts the portless CA. If you run a separate Node.js process outside portless, point it at the CA manually: `NODE_EXTRA_CA_CERTS=~/.portless/ca.pem`. Alternatively, use `--no-tls` for plain HTTP.
+Labelhost automatically sets `NODE_EXTRA_CA_CERTS` in child processes so Node.js trusts the labelhost CA. If you run a separate Node.js process outside labelhost, point it at the CA manually: `NODE_EXTRA_CA_CERTS=~/.labelhost/ca.pem`. Alternatively, use `--no-tls` for plain HTTP.
 
-Portless detects this misconfiguration and responds with `508 Loop Detected` along with a message pointing to this fix.
+Labelhost detects this misconfiguration and responds with `508 Loop Detected` along with a message pointing to this fix.
 
 ## Development
 
-This repo is a pnpm workspace monorepo using [Turborepo](https://turbo.build). The publishable package lives in `packages/portless/`.
+This repo is a pnpm workspace monorepo using [Turborepo](https://turbo.build). The publishable package lives in `packages/labelhost/`.
 
 Use Node.js 24+ and pnpm 11 for repository development. The `.node-version` file pins the Node major for version managers.
 

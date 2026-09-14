@@ -1,5 +1,5 @@
-export const siteUrl = "https://portless.sh";
-export const siteName = "portless";
+export const siteUrl = "https://labelhost.sh";
+export const siteName = "labelhost";
 export const siteDescription =
   "Replace port numbers with stable, named .localhost URLs. For humans and agents.";
 

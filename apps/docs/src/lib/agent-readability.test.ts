@@ -43,14 +43,14 @@ describe("public Markdown", () => {
   });
 
   test("serves missing pages with Markdown attribution", async () => {
-    const response = await getMarkdown(new Request("https://portless.sh/missing.md"), {
+    const response = await getMarkdown(new Request("https://labelhost.sh/missing.md"), {
       params: Promise.resolve({ slug: ["missing"] }),
     });
 
     expect(response.status).toBe(200);
     expect(response.headers.get("content-type")).toBe("text/markdown; charset=utf-8");
     expect(response.headers.get("vary")).toContain("Accept");
-    expect(response.headers.get("link")).toBe('<https://portless.sh/missing>; rel="canonical"');
+    expect(response.headers.get("link")).toBe('<https://labelhost.sh/missing>; rel="canonical"');
     expect(await response.text()).toContain("# Page Not Found");
   });
 });

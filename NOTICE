@@ -1,0 +1,32 @@
+labelhost
+Copyright 2026 Wataru Nishimura
+
+This product is a modified fork of "portless".
+
+  portless
+  Copyright 2025 Vercel Inc.
+  https://github.com/vercel-labs/portless
+
+Licensed under the Apache License, Version 2.0 (the "License"); you may not
+use this file except in compliance with the License. You may obtain a copy of
+the License in the LICENSE file distributed with this work, or at:
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Modifications made in this fork, relative to the upstream project:
+
+  - The project, CLI command, and npm package were renamed from "portless"
+    to "labelhost" so the fork can be installed and run alongside upstream
+    portless without colliding. This covers the user state directory
+    (~/.labelhost), the launchd label (dev.labelhost.proxy), the systemd
+    unit (labelhost.service), the local CA common name and certificate
+    filename (labelhost Local CA / labelhost-ca.crt), and the environment
+    variable prefix (LABELHOST_*).
+  - Configuration gained a per-app "hostnameTemplate" field supporting
+    {{name}} and {{worktree}} placeholders.
+  - Configuration is read from labelhost.json, falling back to portless.json
+    and to a "labelhost" or "portless" key in package.json, so projects
+    already configured for upstream portless keep working.
+
+"portless" and "Vercel" are names of the upstream project and its authors.
+This fork is not affiliated with, endorsed by, or supported by Vercel Inc.
