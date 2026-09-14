@@ -119,7 +119,12 @@ describe("loadConfig", () => {
   });
 
   it("loads config with all fields", () => {
-    const config = { name: "myapp", script: "start", appPort: 3000 };
+    const config = {
+      name: "myapp",
+      hostnameTemplate: "{{worktree}}.{{name}}.dev",
+      script: "start",
+      appPort: 3000,
+    };
     fs.writeFileSync(path.join(tmpDir, "portless.json"), JSON.stringify(config));
     const result = loadConfig(tmpDir);
     expect(result!.config).toEqual(config);
@@ -137,7 +142,7 @@ describe("loadConfig", () => {
   it("loads config with apps map", () => {
     const config = {
       apps: {
-        "apps/web": { name: "web" },
+        "apps/web": { name: "web", hostnameTemplate: "{{name}}.dev" },
         "apps/api": { name: "api", script: "start" },
       },
     };
@@ -244,6 +249,14 @@ describe("loadConfig validation", () => {
     expect(() => loadConfig(tmpDir)).toThrow(ConfigValidationError);
   });
 
+  it("throws when a hostname template uses an unsupported placeholder", () => {
+    fs.writeFileSync(
+      path.join(tmpDir, "portless.json"),
+      JSON.stringify({ apps: { "apps/web": { hostnameTemplate: "{{branch}}.{{name}}" } } })
+    );
+    expect(() => loadConfig(tmpDir)).toThrow(ConfigValidationError);
+  });
+
   it("throws when appPort is out of range", () => {
     fs.writeFileSync(path.join(tmpDir, "portless.json"), JSON.stringify({ appPort: 99999 }));
     expect(() => loadConfig(tmpDir)).toThrow(ConfigValidationError);
@@ -325,6 +338,16 @@ describe("resolveAppConfig", () => {
     };
     const result = resolveAppConfig(config, "/repo", "/repo/apps/gen");
     expect(result.proxy).toBe(false);
+  });
+
+  it("returns hostname template from apps entry", () => {
+    const config = {
+      apps: {
+        "apps/gen": { hostnameTemplate: "{{worktree}}.{{name}}.dev" },
+      },
+    };
+    const result = resolveAppConfig(config, "/repo", "/repo/apps/gen");
+    expect(result.hostnameTemplate).toBe("{{worktree}}.{{name}}.dev");
   });
 
   it("matches exact path in apps map", () => {

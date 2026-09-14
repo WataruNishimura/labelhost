@@ -42,6 +42,7 @@ import {
   truncateLabel,
   sanitizeForHostname,
 } from "./auto.js";
+import { renderHostnameTemplate } from "./hostname-template.js";
 import {
   buildProxyStartConfig,
   DEFAULT_TLD,
@@ -1162,7 +1163,7 @@ async function runApp(
   tls: boolean,
   tlds: string[],
   force: boolean,
-  autoInfo?: { nameSource: string; prefix?: string; prefixSource?: string },
+  autoInfo?: { name: string; nameSource: string; prefix?: string; prefixSource?: string },
   desiredPort?: number,
   lanMode = false,
   lanIp?: string | null
@@ -1275,8 +1276,7 @@ async function runApp(
     console.log(chalk.gray(`-- ${hostnames.join(", ")} (auto-resolves to 127.0.0.1)`));
   }
   if (autoInfo) {
-    const baseName = autoInfo.prefix ? name.slice(autoInfo.prefix.length + 1) : name;
-    console.log(chalk.gray(`-- Name "${baseName}" (from ${autoInfo.nameSource})`));
+    console.log(chalk.gray(`-- Name "${autoInfo.name}" (from ${autoInfo.nameSource})`));
     if (autoInfo.prefix) {
       console.log(chalk.gray(`-- Prefix "${autoInfo.prefix}" (from ${autoInfo.prefixSource})`));
     }
@@ -1804,7 +1804,10 @@ ${colors.bold("Configuration (portless.json):")}
 
   Override name:   { "name": "myapp" }
   Override script: { "name": "myapp", "script": "start" }
-  Monorepo:        { "apps": { "apps/web": { "name": "myapp" } } }
+  Monorepo:        { "apps": { "apps/web": { "hostnameTemplate": "{{worktree}}.{{name}}" } } }
+
+  hostnameTemplate supports {{name}} and {{worktree}}. It is evaluated before
+  portless adds the proxy TLD; an empty worktree label is removed.
 
 ${colors.bold("In package.json:")}
   {
@@ -2261,7 +2264,10 @@ ${colors.bold("Examples:")}
 
   const name = positional[0];
   const worktree = skipWorktree ? null : detectWorktreePrefix();
-  const effectiveName = worktree ? `${worktree.prefix}.${name}` : name;
+  const appConfig = loadAppConfig();
+  const effectiveName = appConfig?.hostnameTemplate
+    ? renderHostnameTemplate(appConfig.hostnameTemplate, { name, worktree: worktree?.prefix })
+    : applyWorktreePrefix(name, worktree);
 
   const { port, tls, tlds } = await discoverState();
   const hostname = buildHostnames(effectiveName, tlds)[0]!;
@@ -3478,7 +3484,12 @@ async function handleDefaultSingle(
   }
 
   const worktree = detectWorktreePrefix(cwd);
-  const effectiveName = applyWorktreePrefix(baseName, worktree);
+  const effectiveName = appConfig?.hostnameTemplate
+    ? renderHostnameTemplate(appConfig.hostnameTemplate, {
+        name: baseName,
+        worktree: worktree?.prefix,
+      })
+    : applyWorktreePrefix(baseName, worktree);
 
   const { dir, port, tls, tlds, lanMode, lanIp } = await discoverState();
   const store = new RouteStore(dir, {
@@ -3493,7 +3504,7 @@ async function handleDefaultSingle(
     tls,
     tlds,
     false,
-    { nameSource, prefix: worktree?.prefix, prefixSource: worktree?.source },
+    { name: baseName, nameSource, prefix: worktree?.prefix, prefixSource: worktree?.source },
     appConfig?.appPort,
     lanMode,
     lanIp
@@ -3764,7 +3775,12 @@ async function handleDefaultMulti(
       label = pkg.scope ? `@${pkg.scope}/${pkg.name}` : (pkg.name ?? rel);
     }
 
-    name = applyWorktreePrefix(name, worktree);
+    name = appOverride.hostnameTemplate
+      ? renderHostnameTemplate(appOverride.hostnameTemplate, {
+          name,
+          worktree: worktree?.prefix,
+        })
+      : applyWorktreePrefix(name, worktree);
 
     apps.push({ pkg, name, label, commandArgs, appPort: appOverride.appPort, proxied });
   }
@@ -4072,7 +4088,12 @@ async function handleRunMode(args: string[], globalScript?: string): Promise<voi
   }
 
   const worktree = detectWorktreePrefix();
-  const effectiveName = worktree ? `${worktree.prefix}.${baseName}` : baseName;
+  const effectiveName = appConfig?.hostnameTemplate
+    ? renderHostnameTemplate(appConfig.hostnameTemplate, {
+        name: baseName,
+        worktree: worktree?.prefix,
+      })
+    : applyWorktreePrefix(baseName, worktree);
 
   const { dir, port, tls, tlds, lanMode, lanIp } = await discoverState();
   const store = new RouteStore(dir, {
@@ -4087,7 +4108,7 @@ async function handleRunMode(args: string[], globalScript?: string): Promise<voi
     tls,
     tlds,
     parsed.force,
-    { nameSource, prefix: worktree?.prefix, prefixSource: worktree?.source },
+    { name: baseName, nameSource, prefix: worktree?.prefix, prefixSource: worktree?.source },
     parsed.appPort,
     lanMode,
     lanIp
@@ -4106,11 +4127,9 @@ async function handleNamedMode(args: string[]): Promise<void> {
     process.exit(1);
   }
 
-  if (!parsed.appPort) {
-    const appConfig = loadAppConfig();
-    if (appConfig?.appPort) {
-      parsed.appPort = appConfig.appPort;
-    }
+  const appConfig = loadAppConfig();
+  if (!parsed.appPort && appConfig?.appPort) {
+    parsed.appPort = appConfig.appPort;
   }
 
   // Truncate individual labels that exceed the DNS limit, same as handleRunMode.
@@ -4118,7 +4137,14 @@ async function handleNamedMode(args: string[]): Promise<void> {
     .split(".")
     .map((label) => truncateLabel(label))
     .join(".");
-  parseHostname(safeName, DEFAULT_TLD);
+  const worktree = appConfig?.hostnameTemplate ? detectWorktreePrefix() : null;
+  const effectiveName = appConfig?.hostnameTemplate
+    ? renderHostnameTemplate(appConfig.hostnameTemplate, {
+        name: safeName,
+        worktree: worktree?.prefix,
+      })
+    : safeName;
+  parseHostname(effectiveName, DEFAULT_TLD);
 
   const { dir, port, tls, tlds, lanMode, lanIp } = await discoverState();
   const store = new RouteStore(dir, {
@@ -4128,7 +4154,7 @@ async function handleNamedMode(args: string[]): Promise<void> {
     store,
     port,
     dir,
-    safeName,
+    effectiveName,
     parsed.commandArgs,
     tls,
     tlds,

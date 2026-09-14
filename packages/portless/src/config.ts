@@ -1,5 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { isValidHostnameTemplate } from "./hostname-template.js";
 
 export class ConfigValidationError extends Error {
   constructor(message: string) {
@@ -10,6 +11,7 @@ export class ConfigValidationError extends Error {
 
 export interface AppConfig {
   name?: string;
+  hostnameTemplate?: string;
   script?: string;
   appPort?: number;
   proxy?: boolean;
@@ -125,7 +127,13 @@ export function resolveAppConfig(
     }
     return {};
   }
-  return { name: config.name, script: config.script, appPort: config.appPort, proxy: config.proxy };
+  return {
+    name: config.name,
+    hostnameTemplate: config.hostnameTemplate,
+    script: config.script,
+    appPort: config.appPort,
+    proxy: config.proxy,
+  };
 }
 
 /**
@@ -311,8 +319,16 @@ function isErrnoException(err: unknown): err is NodeJS.ErrnoException {
   return err instanceof Error && "code" in err;
 }
 
-const KNOWN_TOP_KEYS = new Set(["name", "script", "appPort", "proxy", "apps", "turbo"]);
-const KNOWN_APP_KEYS = new Set(["name", "script", "appPort", "proxy"]);
+const KNOWN_TOP_KEYS = new Set([
+  "name",
+  "hostnameTemplate",
+  "script",
+  "appPort",
+  "proxy",
+  "apps",
+  "turbo",
+]);
+const KNOWN_APP_KEYS = new Set(["name", "hostnameTemplate", "script", "appPort", "proxy"]);
 
 function validateConfig(config: unknown, configPath: string): asserts config is PortlessConfig {
   if (typeof config !== "object" || config === null || Array.isArray(config)) {
@@ -326,6 +342,8 @@ function validateConfig(config: unknown, configPath: string): asserts config is 
       throw new ConfigValidationError(`"name" in ${configPath} must be a non-empty string.`);
     }
   }
+
+  validateHostnameTemplate(obj.hostnameTemplate, "hostnameTemplate", configPath);
 
   if (obj.script !== undefined) {
     if (typeof obj.script !== "string" || !obj.script.trim()) {
@@ -381,6 +399,7 @@ function validateAppConfig(obj: Record<string, unknown>, prefix: string, configP
       );
     }
   }
+  validateHostnameTemplate(obj.hostnameTemplate, `${prefix}.hostnameTemplate`, configPath);
   if (obj.script !== undefined) {
     if (typeof obj.script !== "string" || !obj.script.trim()) {
       throw new ConfigValidationError(
@@ -407,6 +426,18 @@ function validateAppConfig(obj: Record<string, unknown>, prefix: string, configP
   }
 
   warnUnknownKeys(obj, KNOWN_APP_KEYS, configPath, prefix);
+}
+
+function validateHostnameTemplate(value: unknown, field: string, configPath: string): void {
+  if (value === undefined) return;
+  if (typeof value !== "string" || !value.trim()) {
+    throw new ConfigValidationError(`"${field}" in ${configPath} must be a non-empty string.`);
+  }
+  if (!isValidHostnameTemplate(value)) {
+    throw new ConfigValidationError(
+      `"${field}" in ${configPath} may only use {{name}} and {{worktree}} placeholders.`
+    );
+  }
 }
 
 function warnUnknownKeys(
