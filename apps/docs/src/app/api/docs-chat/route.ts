@@ -11,7 +11,7 @@ const DEFAULT_MODEL = "anthropic/claude-haiku-4.5";
 
 const SYSTEM_PROMPT = `You are a helpful documentation assistant for labelhost, a CLI tool that replaces port numbers with stable, named .localhost URLs.
 
-GitHub repository: https://github.com/WataruNishimura/portless
+GitHub repository: https://github.com/WataruNishimura/labelhost
 Documentation: https://labelhost.sh
 npm package: labelhost
 

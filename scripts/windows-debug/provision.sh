@@ -168,7 +168,7 @@ Log "OpenSSL installed: $(openssl version)"
 
 # Clone repo
 Log "Cloning labelhost..."
-git clone https://github.com/WataruNishimura/portless.git C:\labelhost
+git clone https://github.com/WataruNishimura/labelhost.git C:\labelhost
 Set-Location C:\labelhost
 Log "Repo cloned."
 
