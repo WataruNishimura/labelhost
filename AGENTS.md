@@ -34,6 +34,8 @@ When a change affects how humans or agents use labelhost (new/changed/removed co
 
 Releases are manual, single-PR affairs. The maintainer controls the changelog voice and format.
 
+Versions are this fork's own and do not track upstream portless. Numbering restarted at 1.0.0.
+
 To prepare a release:
 
 1. Create a branch (e.g. `prepare-v1.2.0`)

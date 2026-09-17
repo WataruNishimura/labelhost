@@ -1,6 +1,6 @@
 {
   "name": "labelhost",
-  "version": "0.15.5",
+  "version": "1.0.0",
   "description": "Replace port numbers with stable, named .localhost URLs. For humans and agents. A fork of Vercel Labs' portless.",
   "type": "module",
   "main": "./dist/index.js",
