@@ -1,6 +1,6 @@
 export const PAGE_TITLES: Record<string, string> = {
   "": "Replace Port Numbers\nwith Named URLs",
-  why: "Why Portless",
+  why: "Why Labelhost",
   commands: "Commands",
   https: "HTTPS",
   configuration: "Configuration",

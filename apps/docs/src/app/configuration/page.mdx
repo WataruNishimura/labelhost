@@ -1,21 +1,21 @@
 # Configuration
 
-Bare `portless` works out of the box. It runs the `"dev"` script from `package.json` through the proxy, inferring the app name from the package name, git root, or directory:
+Bare `labelhost` works out of the box. It runs the `"dev"` script from `package.json` through the proxy, inferring the app name from the package name, git root, or directory:
 
 ```bash
-portless        # runs "dev" script, https://<project>.localhost
+labelhost        # runs "dev" script, https://<project>.localhost
 ```
 
-## portless.json
+## labelhost.json
 
-Use an optional `portless.json` to override defaults:
+Use an optional `labelhost.json` to override defaults:
 
 ```json
 { "name": "myapp" }
 ```
 
 ```bash
-portless        # runs "dev" script, https://myapp.localhost
+labelhost        # runs "dev" script, https://myapp.localhost
 ```
 
 The name is inferred from `package.json` if not set in config. The script defaults to `"dev"`.
@@ -84,16 +84,45 @@ The name is inferred from `package.json` if not set in config. The script defaul
 
 Each `apps` entry has the same shape (`name`, `hostnameTemplate`, `script`, `appPort`, `proxy`). When `apps` is present, top-level fields apply only in single-app mode.
 
-`hostnameTemplate` is evaluated before portless adds the proxy TLD. `{{name}}` is the configured or inferred app name and `{{worktree}}` is the linked-worktree branch prefix. If there is no worktree prefix, its complete dot-delimited label is removed. For example, `{{worktree}}.{{name}}.dev` resolves to `myapp.dev.localhost` in the primary checkout and `feature-auth.myapp.dev.localhost` in a linked worktree.
+`hostnameTemplate` is evaluated before labelhost adds the proxy TLD. `{{name}}` is the configured or inferred app name and `{{worktree}}` is the linked-worktree branch prefix. If there is no worktree prefix, its complete dot-delimited label is removed. For example, `{{worktree}}.{{name}}.dev` resolves to `myapp.dev.localhost` in the primary checkout and `feature-auth.myapp.dev.localhost` in a linked worktree.
 
-### package.json "portless" key
+### Pkl config
 
-Instead of a separate `portless.json`, you can add a `"portless"` key to your `package.json`. A string value is shorthand for setting the name:
+Config can be written in [Pkl](https://pkl-lang.org) instead of JSON. Put a
+`labelhost.pkl` next to your `package.json` and amend the shipped schema:
+
+```pkl
+amends "https://raw.githubusercontent.com/WataruNishimura/portless/main/packages/labelhost/pkl/Labelhost.pkl"
+
+name = "myapp"
+hostnameTemplate = "{{worktree}}.{{name}}.dev"
+
+apps {
+  ["apps/web"] { appPort = 3000 }
+  ["apps/api"] { name = "api.myapp"; proxy = false }
+}
+```
+
+Amending the schema is the point: a misspelled property or an out-of-range
+port fails at evaluation time, pointing at the offending line, instead of
+being silently ignored the way an unknown JSON key is. When the package is
+installed locally, amend `node_modules/labelhost/pkl/Labelhost.pkl` to avoid
+fetching over HTTP.
+
+This requires the [pkl CLI](https://pkl-lang.org/main/current/pkl-cli/index.html)
+on `PATH`, or `LABELHOST_PKL_BIN` pointing at it. Only projects with a
+`labelhost.pkl` need it. A `labelhost.pkl` that fails to evaluate is reported
+as an error rather than skipped, so a broken config never starts an app under
+the wrong hostname.
+
+### package.json "labelhost" key
+
+Instead of a separate `labelhost.json`, you can add a `"labelhost"` key to your `package.json`. A string value is shorthand for setting the name:
 
 ```json
 {
   "name": "@myorg/web",
-  "portless": "myapp"
+  "labelhost": "myapp"
 }
 ```
 
@@ -102,15 +131,15 @@ An object supports all per-app fields (`name`, `hostnameTemplate`, `script`, `ap
 ```json
 {
   "name": "@myorg/web",
-  "portless": { "name": "myapp", "script": "dev:app" }
+  "labelhost": { "name": "myapp", "script": "dev:app" }
 }
 ```
 
-The `package.json` `"portless"` key takes precedence over `portless.json` app entries but is overridden by CLI flags.
+The `package.json` `"labelhost"` key takes precedence over `labelhost.json` app entries but is overridden by CLI flags.
 
 ### Monorepo
 
-One `portless.json` at the repo root covers all workspace packages. Portless discovers packages from `pnpm-workspace.yaml`, or the `"workspaces"` field in `package.json` (npm, yarn, bun):
+One `labelhost.json` at the repo root covers all workspace packages. Labelhost discovers packages from `pnpm-workspace.yaml`, or the `"workspaces"` field in `package.json` (npm, yarn, bun):
 
 ```json
 {
@@ -125,9 +154,9 @@ One `portless.json` at the repo root covers all workspace packages. Portless dis
 ```
 
 ```bash
-portless                  # from repo root: start all packages with a "dev" script
-cd apps/web && portless   # start just one package
-portless --script start   # run "start" instead of "dev"
+labelhost                  # from repo root: start all packages with a "dev" script
+cd apps/web && labelhost   # start just one package
+labelhost --script start   # run "start" instead of "dev"
 ```
 
 The `apps` map is optional and only needed for overrides. Packages not listed still auto-discover with names inferred from their `package.json`.
@@ -136,31 +165,31 @@ Without an `apps` map, hostnames follow the `<package>.<project>.localhost` conv
 
 ### Turborepo
 
-For turborepo projects, use `portless` as the `dev` script and the real command in a separate script:
+For turborepo projects, use `labelhost` as the `dev` script and the real command in a separate script:
 
 ```json
 {
   "scripts": {
-    "dev": "portless",
+    "dev": "labelhost",
     "dev:app": "next dev"
   },
-  "portless": { "name": "myapp", "script": "dev:app" }
+  "labelhost": { "name": "myapp", "script": "dev:app" }
 }
 ```
 
-`pnpm dev` at the root runs turbo, which runs `portless` in each package. Portless detects the package manager and runs `pnpm run dev:app` through the proxy. No `turbo.json` changes are needed.
+`pnpm dev` at the root runs turbo, which runs `labelhost` in each package. Labelhost detects the package manager and runs `pnpm run dev:app` through the proxy. No `turbo.json` changes are needed.
 
-People without portless installed can run `pnpm run dev:app` directly.
+People without labelhost installed can run `pnpm run dev:app` directly.
 
 ### Precedence
 
 Closest config wins, like Prettier and ESLint:
 
-For `name`: CLI `--name` flag > `package.json` `"portless"` key > `portless.json` app entry > `package.json` inference.
+For `name`: CLI `--name` flag > `package.json` `"labelhost"` key > `labelhost.json` app entry > `package.json` inference.
 
-For `script`: CLI `--script` flag > `package.json` `"portless"` key > `portless.json` app entry > default `"dev"`.
+For `script`: CLI `--script` flag > `package.json` `"labelhost"` key > `labelhost.json` app entry > default `"dev"`.
 
-For `appPort`: CLI `--app-port` flag > `PORTLESS_APP_PORT` env var > `package.json` `"portless"` key > `portless.json` app entry > auto-assigned.
+For `appPort`: CLI `--app-port` flag > `LABELHOST_APP_PORT` env var > `package.json` `"labelhost"` key > `labelhost.json` app entry > auto-assigned.
 
 ## Environment variables
 
@@ -174,57 +203,57 @@ For `appPort`: CLI `--app-port` flag > `PORTLESS_APP_PORT` env var > `package.js
   </thead>
   <tbody>
     <tr>
-      <td>`PORTLESS_PORT`</td>
+      <td>`LABELHOST_PORT`</td>
       <td>Proxy port</td>
       <td>`443` (HTTPS) / `80` (HTTP)</td>
     </tr>
     <tr>
-      <td>`PORTLESS_HTTPS`</td>
+      <td>`LABELHOST_HTTPS`</td>
       <td>HTTPS on by default; set to `0` to disable (same as `--no-tls`)</td>
       <td>on</td>
     </tr>
     <tr>
-      <td>`PORTLESS_LAN`</td>
+      <td>`LABELHOST_LAN`</td>
       <td>Set to `1` to always enable LAN mode (mDNS `.local` domains)</td>
       <td>off</td>
     </tr>
     <tr>
-      <td>`PORTLESS_TLD`</td>
+      <td>`LABELHOST_TLD`</td>
       <td>Use one or more TLDs, single or multi-segment (e.g. `localhost,dev.example.com`)</td>
       <td>`localhost`</td>
     </tr>
     <tr>
-      <td>`PORTLESS_APP_PORT`</td>
+      <td>`LABELHOST_APP_PORT`</td>
       <td>Use a fixed port for the app (skip auto-assignment)</td>
       <td>random 4000 to 4999</td>
     </tr>
     <tr>
-      <td>`PORTLESS_SYNC_HOSTS`</td>
+      <td>`LABELHOST_SYNC_HOSTS`</td>
       <td>Set to `0` to disable auto-sync of `/etc/hosts`</td>
       <td>on</td>
     </tr>
     <tr>
-      <td>`PORTLESS_STATE_DIR`</td>
+      <td>`LABELHOST_STATE_DIR`</td>
       <td>Override the state directory</td>
-      <td>`~/.portless`</td>
+      <td>`~/.labelhost`</td>
     </tr>
     <tr>
-      <td>`PORTLESS_TAILSCALE`</td>
+      <td>`LABELHOST_TAILSCALE`</td>
       <td>Set to `1` to share apps on your Tailscale network</td>
       <td>off</td>
     </tr>
     <tr>
-      <td>`PORTLESS_FUNNEL`</td>
+      <td>`LABELHOST_FUNNEL`</td>
       <td>Set to `1` to share apps publicly via Tailscale Funnel</td>
       <td>off</td>
     </tr>
     <tr>
-      <td>`PORTLESS_NGROK`</td>
+      <td>`LABELHOST_NGROK`</td>
       <td>Set to `1` to share apps publicly via ngrok</td>
       <td>off</td>
     </tr>
     <tr>
-      <td>`PORTLESS`</td>
+      <td>`LABELHOST`</td>
       <td>Set to `0` to bypass the proxy</td>
       <td>enabled</td>
     </tr>
@@ -233,7 +262,7 @@ For `appPort`: CLI `--app-port` flag > `PORTLESS_APP_PORT` env var > `package.js
 
 ## State directory
 
-Portless stores state (routes, PID file, port file, TLS marker) in `~/.portless` on all platforms. Override with `PORTLESS_STATE_DIR`.
+Labelhost stores state (routes, PID file, port file, TLS marker) in `~/.labelhost` on all platforms. Override with `LABELHOST_STATE_DIR`.
 
 ## State files
 
@@ -274,4 +303,4 @@ Portless stores state (routes, PID file, port file, TLS marker) in `~/.portless`
 
 ## Port assignment
 
-Apps get a random port in the 4000--4999 range. Portless sets `PORT` and usually `HOST` before running your command. Most frameworks respect `PORT` automatically. For frameworks that ignore it (Vite, VitePlus, Astro, React Router, Angular, Expo, React Native), portless auto-injects the right `--port` flag and, when needed, a matching `--host` flag. Injection reaches through a package script whose command starts with the framework or a known runner (`"dev": "vite"`, `"dev": "bunx vite"`). Only the framework's server commands get the flags (`dev`, `serve`, `preview`, `start`, or a bare `vite`); a command that does not serve, such as `vite build`, `vite optimize`, `vp test` or `astro check`, rejects them and is left alone. A script portless cannot classify is left alone too: a flag before the subcommand on a CLI whose flag grammar it does not track (`vp --mode dev build`). Portless also leaves a script alone when appending flags to it would not work: a compound command (`&&`, `|`, `;`), a trailing `#` comment, its own `--` option terminator, an env prefix (`NODE_ENV=production vite`), delegation to another script (`"dev": "npm run dev:vite"`), or runner flags before the script name (`bun run --bun dev`). Those keep their own port, so set it in the script yourself.
+Apps get a random port in the 4000--4999 range. Labelhost sets `PORT` and usually `HOST` before running your command. Most frameworks respect `PORT` automatically. For frameworks that ignore it (Vite, VitePlus, Astro, React Router, Angular, Expo, React Native), labelhost auto-injects the right `--port` flag and, when needed, a matching `--host` flag. Injection reaches through a package script whose command starts with the framework or a known runner (`"dev": "vite"`, `"dev": "bunx vite"`). Only the framework's server commands get the flags (`dev`, `serve`, `preview`, `start`, or a bare `vite`); a command that does not serve, such as `vite build`, `vite optimize`, `vp test` or `astro check`, rejects them and is left alone. A script labelhost cannot classify is left alone too: a flag before the subcommand on a CLI whose flag grammar it does not track (`vp --mode dev build`). Labelhost also leaves a script alone when appending flags to it would not work: a compound command (`&&`, `|`, `;`), a trailing `#` comment, its own `--` option terminator, an env prefix (`NODE_ENV=production vite`), delegation to another script (`"dev": "npm run dev:vite"`), or runner flags before the script name (`bun run --bun dev`). Those keep their own port, so set it in the script yourself.

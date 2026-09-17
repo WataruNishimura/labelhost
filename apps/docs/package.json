@@ -1,7 +1,7 @@
 {
-  "name": "@portless/docs",
+  "name": "@labelhost/docs",
   "version": "0.0.0",
-  "portless": "portless",
+  "labelhost": "labelhost",
   "private": true,
   "type": "module",
   "scripts": {

@@ -13,3 +13,7 @@ scripts/windows-debug/.instance
 
 # opensrc - source code for packages
 opensrc/
+
+# Copied into the package at publish time by prepublishOnly
+packages/labelhost/LICENSE
+packages/labelhost/NOTICE

@@ -13,7 +13,7 @@
       "dependsOn": ["build"]
     },
     "test:e2e": {
-      "dependsOn": ["portless#build"],
+      "dependsOn": ["labelhost#build"],
       "cache": false
     },
     "test:coverage": {

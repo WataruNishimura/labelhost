@@ -1,0 +1,2239 @@
+import { describe, it, expect, afterAll, afterEach, beforeAll } from "vitest";
+import * as crypto from "node:crypto";
+import * as fs from "node:fs";
+import * as http from "node:http";
+import * as http2 from "node:http2";
+import * as https from "node:https";
+import * as net from "node:net";
+import * as os from "node:os";
+import * as path from "node:path";
+import { createProxyServer, LABELHOST_HEADER } from "./proxy.js";
+import type { ProxyServer } from "./proxy.js";
+import type { RouteInfo } from "./types.js";
+import { ensureCerts } from "./certs.js";
+
+const TEST_PROXY_PORT = 1355;
+
+/** Helper type covering both http.Server and http2.Http2SecureServer */
+type AnyServer = http.Server | ProxyServer;
+
+function request(
+  server: AnyServer,
+  options: { host?: string; path?: string; method?: string }
+): Promise<{ status: number; headers: http.IncomingHttpHeaders; body: string }> {
+  return new Promise((resolve, reject) => {
+    const addr = server.address();
+    if (!addr || typeof addr === "string") {
+      return reject(new Error("Server not listening"));
+    }
+    const req = http.request(
+      {
+        hostname: "127.0.0.1",
+        port: addr.port,
+        path: options.path || "/",
+        method: options.method || "GET",
+        headers: { host: options.host || "" },
+      },
+      (res) => {
+        let body = "";
+        res.on("data", (chunk) => (body += chunk));
+        res.on("end", () => resolve({ status: res.statusCode!, headers: res.headers, body }));
+      }
+    );
+    req.on("error", reject);
+    req.end();
+  });
+}
+
+function listen(server: AnyServer): Promise<void> {
+  return new Promise((resolve) => {
+    server.listen(0, "127.0.0.1", () => resolve());
+  });
+}
+
+describe("createProxyServer", () => {
+  const servers: AnyServer[] = [];
+
+  function trackServer<T extends AnyServer>(server: T): T {
+    servers.push(server);
+    return server;
+  }
+
+  afterEach(async () => {
+    for (const s of servers) {
+      await new Promise<void>((resolve) => s.close(() => resolve()));
+    }
+    servers.length = 0;
+  });
+
+  describe("request routing", () => {
+    it("returns 404 when Host header has no matching route", async () => {
+      const routes: RouteInfo[] = [];
+      const server = trackServer(
+        createProxyServer({ getRoutes: () => routes, proxyPort: TEST_PROXY_PORT })
+      );
+      await listen(server);
+
+      const res = await request(server, { host: "nonexistent.localhost" });
+      expect(res.status).toBe(404);
+      expect(res.body).toContain("Not Found");
+    });
+
+    it("returns 404 with HTML page for unknown host", async () => {
+      const routes: RouteInfo[] = [];
+      const server = trackServer(
+        createProxyServer({ getRoutes: () => routes, proxyPort: TEST_PROXY_PORT })
+      );
+      await listen(server);
+
+      const res = await request(server, { host: "unknown.localhost" });
+      expect(res.status).toBe(404);
+      expect(res.headers["content-type"]).toBe("text/html");
+      expect(res.body).toContain("Not Found");
+      expect(res.body).toContain("unknown.localhost");
+      expect(res.body).toContain("No apps running.");
+    });
+
+    it("shows active routes in 404 page when routes exist", async () => {
+      const routes: RouteInfo[] = [
+        { hostname: "myapp.localhost", port: 4001 },
+        { hostname: "api.localhost", port: 4002 },
+      ];
+      const server = trackServer(
+        createProxyServer({ getRoutes: () => routes, proxyPort: TEST_PROXY_PORT })
+      );
+      await listen(server);
+
+      const res = await request(server, { host: "other.localhost" });
+      expect(res.status).toBe(404);
+      expect(res.body).toContain("Active apps");
+      expect(res.body).toContain("myapp.localhost");
+      expect(res.body).toContain("api.localhost");
+    });
+
+    it("includes correct port in 404 page links", async () => {
+      const routes: RouteInfo[] = [{ hostname: "myapp.localhost", port: 4001 }];
+      const server = trackServer(createProxyServer({ getRoutes: () => routes, proxyPort: 8080 }));
+      await listen(server);
+
+      const res = await request(server, { host: "other.localhost" });
+      expect(res.status).toBe(404);
+      expect(res.body).toContain('href="http://myapp.localhost:8080"');
+    });
+
+    it("omits port 80 in 404 page links", async () => {
+      const routes: RouteInfo[] = [{ hostname: "myapp.localhost", port: 4001 }];
+      const server = trackServer(createProxyServer({ getRoutes: () => routes, proxyPort: 80 }));
+      await listen(server);
+
+      const res = await request(server, { host: "other.localhost" });
+      expect(res.status).toBe(404);
+      expect(res.body).toContain('href="http://myapp.localhost"');
+      expect(res.body).not.toContain(":80");
+    });
+
+    it("proxies request to matching route", async () => {
+      const backend = trackServer(
+        http.createServer((_req, res) => {
+          res.writeHead(200, { "Content-Type": "text/plain" });
+          res.end("hello from backend");
+        })
+      );
+      await listen(backend);
+      const backendAddr = backend.address();
+      if (!backendAddr || typeof backendAddr === "string") throw new Error("no addr");
+
+      const routes: RouteInfo[] = [{ hostname: "myapp.localhost", port: backendAddr.port }];
+      const server = trackServer(
+        createProxyServer({ getRoutes: () => routes, proxyPort: TEST_PROXY_PORT })
+      );
+      await listen(server);
+
+      const res = await request(server, { host: "myapp.localhost" });
+      expect(res.status).toBe(200);
+      expect(res.body).toBe("hello from backend");
+    });
+
+    it("proxies to a backend listening on IPv6 loopback only (issue #320)", async (ctx) => {
+      const backend = http.createServer((_req, res) => {
+        res.writeHead(200, { "Content-Type": "text/plain" });
+        res.end("hello from ipv6 backend");
+      });
+      const ipv6Available = await new Promise<boolean>((resolve) => {
+        backend.once("error", () => resolve(false));
+        backend.listen(0, "::1", () => resolve(true));
+      });
+      if (!ipv6Available) return ctx.skip();
+      trackServer(backend);
+      const backendAddr = backend.address();
+      if (!backendAddr || typeof backendAddr === "string") throw new Error("no addr");
+
+      const routes: RouteInfo[] = [{ hostname: "myapp.localhost", port: backendAddr.port }];
+      const server = trackServer(
+        createProxyServer({ getRoutes: () => routes, proxyPort: TEST_PROXY_PORT })
+      );
+      await listen(server);
+
+      const res = await request(server, { host: "myapp.localhost" });
+      expect(res.status).toBe(200);
+      expect(res.body).toBe("hello from ipv6 backend");
+    });
+
+    it("routes wildcard subdomain to matching parent route when strict is false", async () => {
+      const backend = trackServer(
+        http.createServer((_req, res) => {
+          res.writeHead(200, { "Content-Type": "text/plain" });
+          res.end("wildcard hit");
+        })
+      );
+      await listen(backend);
+      const backendAddr = backend.address();
+      if (!backendAddr || typeof backendAddr === "string") throw new Error("no addr");
+
+      const routes: RouteInfo[] = [{ hostname: "myapp.localhost", port: backendAddr.port }];
+      const server = trackServer(
+        createProxyServer({
+          getRoutes: () => routes,
+          proxyPort: TEST_PROXY_PORT,
+          strict: false,
+        })
+      );
+      await listen(server);
+
+      const res = await request(server, { host: "tenant.myapp.localhost" });
+      expect(res.status).toBe(200);
+      expect(res.body).toBe("wildcard hit");
+    });
+
+    it("prefers exact match over wildcard subdomain match", async () => {
+      const exactBackend = trackServer(
+        http.createServer((_req, res) => {
+          res.writeHead(200, { "Content-Type": "text/plain" });
+          res.end("exact");
+        })
+      );
+      await listen(exactBackend);
+      const exactAddr = exactBackend.address();
+      if (!exactAddr || typeof exactAddr === "string") throw new Error("no addr");
+
+      const wildcardBackend = trackServer(
+        http.createServer((_req, res) => {
+          res.writeHead(200, { "Content-Type": "text/plain" });
+          res.end("wildcard");
+        })
+      );
+      await listen(wildcardBackend);
+      const wildcardAddr = wildcardBackend.address();
+      if (!wildcardAddr || typeof wildcardAddr === "string") throw new Error("no addr");
+
+      const routes: RouteInfo[] = [
+        { hostname: "tenant.myapp.localhost", port: exactAddr.port },
+        { hostname: "myapp.localhost", port: wildcardAddr.port },
+      ];
+      const server = trackServer(
+        createProxyServer({
+          getRoutes: () => routes,
+          proxyPort: TEST_PROXY_PORT,
+          strict: false,
+        })
+      );
+      await listen(server);
+
+      const res = await request(server, { host: "tenant.myapp.localhost" });
+      expect(res.status).toBe(200);
+      expect(res.body).toBe("exact");
+    });
+
+    it("returns 404 when subdomain does not match any route", async () => {
+      const routes: RouteInfo[] = [{ hostname: "myapp.localhost", port: 4001 }];
+      const server = trackServer(
+        createProxyServer({ getRoutes: () => routes, proxyPort: TEST_PROXY_PORT })
+      );
+      await listen(server);
+
+      const res = await request(server, { host: "other.localhost" });
+      expect(res.status).toBe(404);
+    });
+
+    it("strips port from Host header for matching", async () => {
+      const backend = trackServer(
+        http.createServer((_req, res) => {
+          res.writeHead(200, { "Content-Type": "text/plain" });
+          res.end("matched");
+        })
+      );
+      await listen(backend);
+      const backendAddr = backend.address();
+      if (!backendAddr || typeof backendAddr === "string") throw new Error("no addr");
+
+      const routes: RouteInfo[] = [{ hostname: "myapp.localhost", port: backendAddr.port }];
+      const server = trackServer(
+        createProxyServer({ getRoutes: () => routes, proxyPort: TEST_PROXY_PORT })
+      );
+      await listen(server);
+
+      const res = await request(server, { host: "myapp.localhost:80" });
+      expect(res.status).toBe(200);
+      expect(res.body).toBe("matched");
+    });
+
+    it("routes requests addressed to a route's tailscale hostname (issue #297)", async () => {
+      const backend = trackServer(
+        http.createServer((_req, res) => {
+          res.writeHead(200, { "Content-Type": "text/plain" });
+          res.end("funnel hit");
+        })
+      );
+      await listen(backend);
+      const backendAddr = backend.address();
+      if (!backendAddr || typeof backendAddr === "string") throw new Error("no addr");
+
+      const routes: RouteInfo[] = [
+        {
+          hostname: "myapp.localhost",
+          port: backendAddr.port,
+          tailscaleUrl: "https://my-device.tail1234.ts.net",
+        },
+      ];
+      const server = trackServer(
+        createProxyServer({ getRoutes: () => routes, proxyPort: TEST_PROXY_PORT })
+      );
+      await listen(server);
+
+      const res = await request(server, { host: "my-device.tail1234.ts.net" });
+      expect(res.status).toBe(200);
+      expect(res.body).toBe("funnel hit");
+    });
+
+    it("routes tailscale hostname even when the local hostname is worktree-prefixed (issue #343)", async () => {
+      const backend = trackServer(
+        http.createServer((_req, res) => {
+          res.writeHead(200, { "Content-Type": "text/plain" });
+          res.end("worktree funnel hit");
+        })
+      );
+      await listen(backend);
+      const backendAddr = backend.address();
+      if (!backendAddr || typeof backendAddr === "string") throw new Error("no addr");
+
+      const routes: RouteInfo[] = [
+        {
+          hostname: "myfeature.myapp.localhost",
+          port: backendAddr.port,
+          tailscaleUrl: "https://my-device.tail1234.ts.net",
+        },
+      ];
+      const server = trackServer(
+        createProxyServer({ getRoutes: () => routes, proxyPort: TEST_PROXY_PORT, strict: true })
+      );
+      await listen(server);
+
+      const res = await request(server, { host: "my-device.tail1234.ts.net" });
+      expect(res.status).toBe(200);
+      expect(res.body).toBe("worktree funnel hit");
+    });
+
+    it("does not match tailscale hostname against unrelated hosts", async () => {
+      const routes: RouteInfo[] = [
+        {
+          hostname: "myapp.localhost",
+          port: 4001,
+          tailscaleUrl: "https://my-device.tail1234.ts.net",
+        },
+      ];
+      const server = trackServer(
+        createProxyServer({ getRoutes: () => routes, proxyPort: TEST_PROXY_PORT })
+      );
+      await listen(server);
+
+      const res = await request(server, { host: "other-device.tail1234.ts.net" });
+      expect(res.status).toBe(404);
+    });
+
+    it("matches the tailscale route registered for the request port", async () => {
+      const backendA = trackServer(
+        http.createServer((_req, res) => {
+          res.writeHead(200, { "Content-Type": "text/plain" });
+          res.end("app on :443");
+        })
+      );
+      const backendB = trackServer(
+        http.createServer((_req, res) => {
+          res.writeHead(200, { "Content-Type": "text/plain" });
+          res.end("app on :8443");
+        })
+      );
+      await listen(backendA);
+      await listen(backendB);
+      const addrA = backendA.address();
+      const addrB = backendB.address();
+      if (!addrA || typeof addrA === "string") throw new Error("no addr");
+      if (!addrB || typeof addrB === "string") throw new Error("no addr");
+
+      const routes: RouteInfo[] = [
+        {
+          hostname: "app-a.localhost",
+          port: addrA.port,
+          tailscaleUrl: "https://my-device.tail1234.ts.net",
+        },
+        {
+          hostname: "app-b.localhost",
+          port: addrB.port,
+          tailscaleUrl: "https://my-device.tail1234.ts.net:8443",
+        },
+      ];
+      const server = trackServer(
+        createProxyServer({ getRoutes: () => routes, proxyPort: TEST_PROXY_PORT })
+      );
+      await listen(server);
+
+      const resB = await request(server, { host: "my-device.tail1234.ts.net:8443" });
+      expect(resB.status).toBe(200);
+      expect(resB.body).toBe("app on :8443");
+
+      const resA = await request(server, { host: "my-device.tail1234.ts.net" });
+      expect(resA.status).toBe(200);
+      expect(resA.body).toBe("app on :443");
+    });
+
+    it("matches a tailscale route by hostname when the request port differs", async () => {
+      const backend = trackServer(
+        http.createServer((_req, res) => {
+          res.writeHead(200, { "Content-Type": "text/plain" });
+          res.end("only app");
+        })
+      );
+      await listen(backend);
+      const addr = backend.address();
+      if (!addr || typeof addr === "string") throw new Error("no addr");
+
+      const routes: RouteInfo[] = [
+        {
+          hostname: "myapp.localhost",
+          port: addr.port,
+          tailscaleUrl: "https://my-device.tail1234.ts.net:8443",
+        },
+      ];
+      const server = trackServer(
+        createProxyServer({ getRoutes: () => routes, proxyPort: TEST_PROXY_PORT })
+      );
+      await listen(server);
+
+      const res = await request(server, { host: "my-device.tail1234.ts.net" });
+      expect(res.status).toBe(200);
+      expect(res.body).toBe("only app");
+    });
+
+    it("routes an explicit :443 tailscale Host to the default-port app when another route shares the hostname (review: ctate)", async () => {
+      const backendDefault = trackServer(
+        http.createServer((_req, res) => {
+          res.writeHead(200, { "Content-Type": "text/plain" });
+          res.end("app on :443");
+        })
+      );
+      const backendAlt = trackServer(
+        http.createServer((_req, res) => {
+          res.writeHead(200, { "Content-Type": "text/plain" });
+          res.end("app on :8443");
+        })
+      );
+      await listen(backendDefault);
+      await listen(backendAlt);
+      const addrDefault = backendDefault.address();
+      const addrAlt = backendAlt.address();
+      if (!addrDefault || typeof addrDefault === "string") throw new Error("no addr");
+      if (!addrAlt || typeof addrAlt === "string") throw new Error("no addr");
+
+      // The alternate-port route is listed first so a port-insensitive fallback
+      // would resolve the explicit :443 request to the wrong app.
+      const routes: RouteInfo[] = [
+        {
+          hostname: "app-b.localhost",
+          port: addrAlt.port,
+          tailscaleUrl: "https://my-device.tail1234.ts.net:8443",
+        },
+        {
+          hostname: "app-a.localhost",
+          port: addrDefault.port,
+          tailscaleUrl: "https://my-device.tail1234.ts.net",
+        },
+      ];
+      const server = trackServer(
+        createProxyServer({ getRoutes: () => routes, proxyPort: TEST_PROXY_PORT })
+      );
+      await listen(server);
+
+      const res = await request(server, { host: "my-device.tail1234.ts.net:443" });
+      expect(res.status).toBe(200);
+      expect(res.body).toBe("app on :443");
+    });
+
+    it("matches a tailscale hostname case-insensitively (review: ctate)", async () => {
+      const backend = trackServer(
+        http.createServer((_req, res) => {
+          res.writeHead(200, { "Content-Type": "text/plain" });
+          res.end("mixed case funnel hit");
+        })
+      );
+      await listen(backend);
+      const backendAddr = backend.address();
+      if (!backendAddr || typeof backendAddr === "string") throw new Error("no addr");
+
+      const routes: RouteInfo[] = [
+        {
+          hostname: "myapp.localhost",
+          port: backendAddr.port,
+          tailscaleUrl: "https://my-device.tail1234.ts.net",
+        },
+      ];
+      const server = trackServer(
+        createProxyServer({ getRoutes: () => routes, proxyPort: TEST_PROXY_PORT })
+      );
+      await listen(server);
+
+      const res = await request(server, { host: "My-Device.Tail1234.TS.net" });
+      expect(res.status).toBe(200);
+      expect(res.body).toBe("mixed case funnel hit");
+    });
+
+    it("returns 404 for unregistered subdomain prefix by default", async () => {
+      const backend = trackServer(
+        http.createServer((_req, res) => {
+          res.writeHead(200, { "Content-Type": "text/plain" });
+          res.end("should not reach");
+        })
+      );
+      await listen(backend);
+      const backendAddr = backend.address();
+      if (!backendAddr || typeof backendAddr === "string") throw new Error("no addr");
+
+      const routes: RouteInfo[] = [{ hostname: "myapp.localhost", port: backendAddr.port }];
+      const server = trackServer(
+        createProxyServer({ getRoutes: () => routes, proxyPort: TEST_PROXY_PORT })
+      );
+      await listen(server);
+
+      const res = await request(server, { host: "unknown.myapp.localhost" });
+      expect(res.status).toBe(404);
+      expect(res.body).toContain("Not Found");
+    });
+
+    it("still routes exact matches by default", async () => {
+      const backend = trackServer(
+        http.createServer((_req, res) => {
+          res.writeHead(200, { "Content-Type": "text/plain" });
+          res.end("exact match");
+        })
+      );
+      await listen(backend);
+      const backendAddr = backend.address();
+      if (!backendAddr || typeof backendAddr === "string") throw new Error("no addr");
+
+      const routes: RouteInfo[] = [{ hostname: "myapp.localhost", port: backendAddr.port }];
+      const server = trackServer(
+        createProxyServer({ getRoutes: () => routes, proxyPort: TEST_PROXY_PORT })
+      );
+      await listen(server);
+
+      const res = await request(server, { host: "myapp.localhost" });
+      expect(res.status).toBe(200);
+      expect(res.body).toBe("exact match");
+    });
+
+    it("routes registered subdomain prefix but not unregistered ones", async () => {
+      const parentBackend = trackServer(
+        http.createServer((_req, res) => {
+          res.writeHead(200, { "Content-Type": "text/plain" });
+          res.end("parent");
+        })
+      );
+      await listen(parentBackend);
+      const parentAddr = parentBackend.address();
+      if (!parentAddr || typeof parentAddr === "string") throw new Error("no addr");
+
+      const childBackend = trackServer(
+        http.createServer((_req, res) => {
+          res.writeHead(200, { "Content-Type": "text/plain" });
+          res.end("child");
+        })
+      );
+      await listen(childBackend);
+      const childAddr = childBackend.address();
+      if (!childAddr || typeof childAddr === "string") throw new Error("no addr");
+
+      const routes: RouteInfo[] = [
+        { hostname: "myapp.localhost", port: parentAddr.port },
+        { hostname: "feat.myapp.localhost", port: childAddr.port },
+      ];
+      const server = trackServer(
+        createProxyServer({ getRoutes: () => routes, proxyPort: TEST_PROXY_PORT })
+      );
+      await listen(server);
+
+      // Registered prefix routes to its own backend
+      const childRes = await request(server, { host: "feat.myapp.localhost" });
+      expect(childRes.status).toBe(200);
+      expect(childRes.body).toBe("child");
+
+      // Unregistered prefix returns 404
+      const unknownRes = await request(server, { host: "other.myapp.localhost" });
+      expect(unknownRes.status).toBe(404);
+
+      // Parent still works
+      const parentRes = await request(server, { host: "myapp.localhost" });
+      expect(parentRes.status).toBe(200);
+      expect(parentRes.body).toBe("parent");
+    });
+  });
+
+  describe("missing Host header", () => {
+    it("returns 400 when Host header is missing", async () => {
+      const routes: RouteInfo[] = [];
+      const server = trackServer(
+        createProxyServer({ getRoutes: () => routes, proxyPort: TEST_PROXY_PORT })
+      );
+      await listen(server);
+
+      const addr = server.address();
+      if (!addr || typeof addr === "string") throw new Error("no addr");
+
+      // Use raw TCP to send HTTP request without a Host header
+      const response = await new Promise<string>((resolve, reject) => {
+        const socket = net.createConnection(addr.port, "127.0.0.1", () => {
+          socket.write("GET / HTTP/1.0\r\n\r\n");
+        });
+        let data = "";
+        socket.on("data", (chunk) => (data += chunk));
+        socket.on("end", () => resolve(data));
+        socket.on("error", reject);
+      });
+
+      expect(response).toContain("400");
+      expect(response).toContain("Missing Host header");
+    });
+  });
+
+  describe("error handling", () => {
+    it("returns 502 when backend is not running", async () => {
+      const errors: string[] = [];
+      const routes: RouteInfo[] = [{ hostname: "dead.localhost", port: 59999 }];
+      const server = trackServer(
+        createProxyServer({
+          getRoutes: () => routes,
+          proxyPort: TEST_PROXY_PORT,
+          onError: (msg) => errors.push(msg),
+        })
+      );
+      await listen(server);
+
+      const res = await request(server, { host: "dead.localhost" });
+      expect(res.status).toBe(502);
+      expect(res.body).toContain("Bad Gateway");
+      expect(errors.length).toBeGreaterThan(0);
+      expect(errors[0]).toContain("dead.localhost");
+    });
+  });
+
+  describe("X-Labelhost header", () => {
+    it("includes X-Labelhost header on 404 responses", async () => {
+      const routes: RouteInfo[] = [];
+      const server = trackServer(
+        createProxyServer({ getRoutes: () => routes, proxyPort: TEST_PROXY_PORT })
+      );
+      await listen(server);
+
+      const res = await request(server, { host: "unknown.localhost" });
+      expect(res.headers[LABELHOST_HEADER.toLowerCase()]).toBe("1");
+    });
+
+    it("includes X-Labelhost header on 400 responses", async () => {
+      const routes: RouteInfo[] = [];
+      const server = trackServer(
+        createProxyServer({ getRoutes: () => routes, proxyPort: TEST_PROXY_PORT })
+      );
+      await listen(server);
+
+      const res = await request(server, { host: "" });
+      expect(res.headers[LABELHOST_HEADER.toLowerCase()]).toBe("1");
+    });
+  });
+
+  describe("proxy loop detection", () => {
+    it("returns 508 when X-Labelhost-Hops reaches the threshold", async () => {
+      const backend = trackServer(
+        http.createServer((_req, res) => {
+          res.writeHead(200);
+          res.end("should not reach here");
+        })
+      );
+      await listen(backend);
+      const backendAddr = backend.address();
+      if (!backendAddr || typeof backendAddr === "string") throw new Error("no addr");
+
+      const routes: RouteInfo[] = [{ hostname: "app.localhost", port: backendAddr.port }];
+      const errors: string[] = [];
+      const server = trackServer(
+        createProxyServer({
+          getRoutes: () => routes,
+          proxyPort: TEST_PROXY_PORT,
+          onError: (msg) => errors.push(msg),
+        })
+      );
+      await listen(server);
+
+      const addr = server.address();
+      if (!addr || typeof addr === "string") throw new Error("no addr");
+
+      const res = await new Promise<{ status: number; body: string }>((resolve, reject) => {
+        const req = http.request(
+          {
+            hostname: "127.0.0.1",
+            port: addr.port,
+            path: "/",
+            method: "GET",
+            headers: {
+              host: "app.localhost",
+              "x-labelhost-hops": "5",
+            },
+          },
+          (res) => {
+            let body = "";
+            res.on("data", (chunk) => (body += chunk));
+            res.on("end", () => resolve({ status: res.statusCode!, body }));
+          }
+        );
+        req.on("error", reject);
+        req.end();
+      });
+
+      expect(res.status).toBe(508);
+      expect(res.body).toContain("Loop Detected");
+      expect(res.body).toContain("changeOrigin");
+      expect(errors.length).toBeGreaterThan(0);
+      expect(errors[0]).toContain("Loop detected");
+    });
+
+    it("allows requests with hops below the threshold", async () => {
+      const backend = trackServer(
+        http.createServer((_req, res) => {
+          res.writeHead(200, { "Content-Type": "text/plain" });
+          res.end("ok");
+        })
+      );
+      await listen(backend);
+      const backendAddr = backend.address();
+      if (!backendAddr || typeof backendAddr === "string") throw new Error("no addr");
+
+      const routes: RouteInfo[] = [{ hostname: "app.localhost", port: backendAddr.port }];
+      const server = trackServer(
+        createProxyServer({ getRoutes: () => routes, proxyPort: TEST_PROXY_PORT })
+      );
+      await listen(server);
+
+      const addr = server.address();
+      if (!addr || typeof addr === "string") throw new Error("no addr");
+
+      const res = await new Promise<{ status: number; body: string }>((resolve, reject) => {
+        const req = http.request(
+          {
+            hostname: "127.0.0.1",
+            port: addr.port,
+            path: "/",
+            method: "GET",
+            headers: {
+              host: "app.localhost",
+              "x-labelhost-hops": "2",
+            },
+          },
+          (res) => {
+            let body = "";
+            res.on("data", (chunk) => (body += chunk));
+            res.on("end", () => resolve({ status: res.statusCode!, body }));
+          }
+        );
+        req.on("error", reject);
+        req.end();
+      });
+
+      expect(res.status).toBe(200);
+      expect(res.body).toBe("ok");
+    });
+
+    it("increments X-Labelhost-Hops when forwarding to backend", async () => {
+      let receivedHops = "";
+      const backend = trackServer(
+        http.createServer((req, res) => {
+          receivedHops = req.headers["x-labelhost-hops"] as string;
+          res.writeHead(200);
+          res.end("ok");
+        })
+      );
+      await listen(backend);
+      const backendAddr = backend.address();
+      if (!backendAddr || typeof backendAddr === "string") throw new Error("no addr");
+
+      const routes: RouteInfo[] = [{ hostname: "myapp.localhost", port: backendAddr.port }];
+      const server = trackServer(
+        createProxyServer({ getRoutes: () => routes, proxyPort: TEST_PROXY_PORT })
+      );
+      await listen(server);
+
+      // Request with no existing hops header; should be set to 1
+      await request(server, { host: "myapp.localhost" });
+      expect(receivedHops).toBe("1");
+
+      // Request with existing hops; should be incremented
+      const addr = server.address();
+      if (!addr || typeof addr === "string") throw new Error("no addr");
+
+      await new Promise<void>((resolve, reject) => {
+        const req = http.request(
+          {
+            hostname: "127.0.0.1",
+            port: addr.port,
+            path: "/",
+            method: "GET",
+            headers: {
+              host: "myapp.localhost",
+              "x-labelhost-hops": "3",
+            },
+          },
+          (res) => {
+            res.resume();
+            res.on("end", () => resolve());
+          }
+        );
+        req.on("error", reject);
+        req.end();
+      });
+      expect(receivedHops).toBe("4");
+    });
+
+    it("closes socket on WebSocket upgrade when hops exceed threshold", async () => {
+      const backend = trackServer(http.createServer());
+      backend.on("upgrade", (_req, socket) => {
+        socket.write(
+          "HTTP/1.1 101 Switching Protocols\r\n" +
+            "Upgrade: websocket\r\n" +
+            "Connection: Upgrade\r\n" +
+            "\r\n"
+        );
+        socket.end();
+      });
+      await listen(backend);
+      const backendAddr = backend.address();
+      if (!backendAddr || typeof backendAddr === "string") throw new Error("no addr");
+
+      const routes: RouteInfo[] = [{ hostname: "ws.localhost", port: backendAddr.port }];
+      const errors: string[] = [];
+      const server = trackServer(
+        createProxyServer({
+          getRoutes: () => routes,
+          proxyPort: TEST_PROXY_PORT,
+          onError: (msg) => errors.push(msg),
+        })
+      );
+      await listen(server);
+
+      const addr = server.address();
+      if (!addr || typeof addr === "string") throw new Error("no addr");
+
+      const destroyed = await new Promise<boolean>((resolve) => {
+        const req = http.request({
+          hostname: "127.0.0.1",
+          port: addr.port,
+          path: "/",
+          headers: {
+            host: "ws.localhost",
+            connection: "Upgrade",
+            upgrade: "websocket",
+            "x-labelhost-hops": "5",
+          },
+        });
+        req.on("error", () => resolve(true));
+        req.on("close", () => resolve(true));
+        req.on("upgrade", () => resolve(false));
+        req.end();
+      });
+
+      expect(destroyed).toBe(true);
+      expect(errors.length).toBeGreaterThan(0);
+      expect(errors[0]).toContain("WebSocket loop detected");
+    });
+
+    it("detects loop with real proxy loop scenario", async () => {
+      const routes: RouteInfo[] = [];
+      const proxyServer = trackServer(
+        createProxyServer({
+          getRoutes: () => routes,
+          proxyPort: TEST_PROXY_PORT,
+          onError: () => {},
+        })
+      );
+      await listen(proxyServer);
+      const proxyAddr = proxyServer.address();
+      if (!proxyAddr || typeof proxyAddr === "string") throw new Error("no addr");
+
+      // Backend that proxies /api requests back through labelhost with the
+      // same Host header (simulates Vite without changeOrigin: true)
+      const loopingBackend = trackServer(
+        http.createServer((req, res) => {
+          if (req.url?.startsWith("/api")) {
+            const proxyReq = http.request(
+              {
+                hostname: "127.0.0.1",
+                port: proxyAddr.port,
+                path: req.url,
+                method: req.method,
+                headers: { ...req.headers },
+              },
+              (proxyRes) => {
+                res.writeHead(proxyRes.statusCode || 502, proxyRes.headers);
+                proxyRes.pipe(res);
+              }
+            );
+            proxyReq.on("error", () => {
+              if (!res.headersSent) {
+                res.writeHead(502);
+                res.end("proxy error");
+              }
+            });
+            req.pipe(proxyReq);
+          } else {
+            res.writeHead(200);
+            res.end("frontend page");
+          }
+        })
+      );
+      await listen(loopingBackend);
+      const backendAddr = loopingBackend.address();
+      if (!backendAddr || typeof backendAddr === "string") throw new Error("no addr");
+
+      routes.push({ hostname: "frontend.localhost", port: backendAddr.port });
+
+      const res = await new Promise<{ status: number; body: string }>((resolve, reject) => {
+        const req = http.request(
+          {
+            hostname: "127.0.0.1",
+            port: proxyAddr.port,
+            path: "/api/tasks",
+            method: "GET",
+            headers: { host: "frontend.localhost" },
+          },
+          (res) => {
+            let body = "";
+            res.on("data", (chunk) => (body += chunk));
+            res.on("end", () => resolve({ status: res.statusCode!, body }));
+          }
+        );
+        req.on("error", reject);
+        req.setTimeout(5000, () => {
+          req.destroy();
+          reject(new Error("timeout - loop was not detected"));
+        });
+        req.end();
+      });
+
+      expect(res.status).toBe(508);
+      expect(res.body).toContain("Loop Detected");
+    });
+  });
+
+  describe("custom TLD", () => {
+    it("uses custom TLD in 404 page suggested command", async () => {
+      const routes: RouteInfo[] = [];
+      const server = trackServer(
+        createProxyServer({ getRoutes: () => routes, proxyPort: TEST_PROXY_PORT, tld: "test" })
+      );
+      await listen(server);
+
+      const res = await request(server, { host: "unknown.test" });
+      expect(res.status).toBe(404);
+      expect(res.body).toContain("unknown.test");
+      expect(res.body).toContain("labelhost unknown your-command");
+    });
+
+    it("uses custom TLD in 508 loop detection page", async () => {
+      const backend = trackServer(
+        http.createServer((_req, res) => {
+          res.writeHead(200);
+          res.end("ok");
+        })
+      );
+      await listen(backend);
+      const backendAddr = backend.address();
+      if (!backendAddr || typeof backendAddr === "string") throw new Error("no addr");
+
+      const routes: RouteInfo[] = [{ hostname: "app.test", port: backendAddr.port }];
+      const server = trackServer(
+        createProxyServer({
+          getRoutes: () => routes,
+          proxyPort: TEST_PROXY_PORT,
+          tld: "test",
+          onError: () => {},
+        })
+      );
+      await listen(server);
+
+      const addr = server.address();
+      if (!addr || typeof addr === "string") throw new Error("no addr");
+
+      const res = await new Promise<{ status: number; body: string }>((resolve, reject) => {
+        const req = http.request(
+          {
+            hostname: "127.0.0.1",
+            port: addr.port,
+            path: "/",
+            method: "GET",
+            headers: {
+              host: "app.test",
+              "x-labelhost-hops": "5",
+            },
+          },
+          (res) => {
+            let body = "";
+            res.on("data", (chunk) => (body += chunk));
+            res.on("end", () => resolve({ status: res.statusCode!, body }));
+          }
+        );
+        req.on("error", reject);
+        req.end();
+      });
+
+      expect(res.status).toBe(508);
+      expect(res.body).toContain(".test");
+    });
+
+    it("routes requests with custom TLD hostnames", async () => {
+      const backend = trackServer(
+        http.createServer((_req, res) => {
+          res.writeHead(200, { "Content-Type": "text/plain" });
+          res.end("custom tld hit");
+        })
+      );
+      await listen(backend);
+      const backendAddr = backend.address();
+      if (!backendAddr || typeof backendAddr === "string") throw new Error("no addr");
+
+      const routes: RouteInfo[] = [{ hostname: "myapp.test", port: backendAddr.port }];
+      const server = trackServer(
+        createProxyServer({ getRoutes: () => routes, proxyPort: TEST_PROXY_PORT, tld: "test" })
+      );
+      await listen(server);
+
+      const res = await request(server, { host: "myapp.test" });
+      expect(res.status).toBe(200);
+      expect(res.body).toBe("custom tld hit");
+    });
+
+    it("routes requests with multi-segment custom TLD hostnames (issue #260)", async () => {
+      const backend = trackServer(
+        http.createServer((_req, res) => {
+          res.writeHead(200, { "Content-Type": "text/plain" });
+          res.end("multi-segment tld hit");
+        })
+      );
+      await listen(backend);
+      const backendAddr = backend.address();
+      if (!backendAddr || typeof backendAddr === "string") throw new Error("no addr");
+
+      const routes: RouteInfo[] = [{ hostname: "myapp.dev.example.com", port: backendAddr.port }];
+      const server = trackServer(
+        createProxyServer({
+          getRoutes: () => routes,
+          proxyPort: TEST_PROXY_PORT,
+          tlds: ["dev.example.com"],
+        })
+      );
+      await listen(server);
+
+      const res = await request(server, { host: "myapp.dev.example.com" });
+      expect(res.status).toBe(200);
+      expect(res.body).toBe("multi-segment tld hit");
+    });
+
+    it("suggests the longest matching overlapping TLD in 404 page (issue #260)", async () => {
+      const routes: RouteInfo[] = [];
+      const server = trackServer(
+        createProxyServer({
+          getRoutes: () => routes,
+          proxyPort: TEST_PROXY_PORT,
+          tlds: ["example.com", "dev.example.com"],
+        })
+      );
+      await listen(server);
+
+      const res = await request(server, { host: "missing.dev.example.com" });
+      expect(res.status).toBe(404);
+      expect(res.body).toContain("labelhost missing your-command");
+    });
+  });
+
+  describe("XSS safety", () => {
+    it("escapes hostname in 404 page", async () => {
+      const routes: RouteInfo[] = [];
+      const server = trackServer(
+        createProxyServer({ getRoutes: () => routes, proxyPort: TEST_PROXY_PORT })
+      );
+      await listen(server);
+
+      // The proxy extracts hostname from the Host header before the colon
+      const res = await request(server, { host: "<script>alert(1)</script>" });
+      expect(res.status).toBe(404);
+      expect(res.body).not.toContain("<script>alert(1)</script>");
+      expect(res.body).toContain("&lt;script&gt;");
+    });
+
+    it("escapes route hostnames in active apps list", async () => {
+      // Route hostnames come from the route store, but defense-in-depth matters
+      const routes: RouteInfo[] = [{ hostname: '<img src=x onerror="alert(1)">', port: 4001 }];
+      const server = trackServer(
+        createProxyServer({ getRoutes: () => routes, proxyPort: TEST_PROXY_PORT })
+      );
+      await listen(server);
+
+      const res = await request(server, { host: "other.localhost" });
+      expect(res.status).toBe(404);
+      expect(res.body).not.toContain("<img src=x");
+      expect(res.body).toContain("&lt;img");
+    });
+  });
+
+  describe("WebSocket upgrade", () => {
+    it("proxies WebSocket upgrade to matching route", async () => {
+      // Create a backend that accepts WebSocket upgrades
+      const backend = trackServer(http.createServer());
+      backend.on("upgrade", (req, socket) => {
+        socket.write(
+          "HTTP/1.1 101 Switching Protocols\r\n" +
+            "Upgrade: websocket\r\n" +
+            "Connection: Upgrade\r\n" +
+            "\r\n"
+        );
+        socket.end();
+      });
+      await listen(backend);
+      const backendAddr = backend.address();
+      if (!backendAddr || typeof backendAddr === "string") throw new Error("no addr");
+
+      const routes: RouteInfo[] = [{ hostname: "ws.localhost", port: backendAddr.port }];
+      const server = trackServer(
+        createProxyServer({ getRoutes: () => routes, proxyPort: TEST_PROXY_PORT })
+      );
+      await listen(server);
+
+      const addr = server.address();
+      if (!addr || typeof addr === "string") throw new Error("no addr");
+
+      const upgraded = await new Promise<boolean>((resolve) => {
+        const req = http.request({
+          hostname: "127.0.0.1",
+          port: addr.port,
+          path: "/",
+          headers: {
+            host: "ws.localhost",
+            connection: "Upgrade",
+            upgrade: "websocket",
+          },
+        });
+        req.on("error", () => resolve(false));
+        req.on("upgrade", () => resolve(true));
+        req.setTimeout(2000, () => {
+          req.destroy();
+          resolve(false);
+        });
+        req.end();
+      });
+
+      expect(upgraded).toBe(true);
+    });
+
+    it("responds 502 when the backend answers the handshake with a non-HTTP response", async () => {
+      const backend = trackServer(http.createServer());
+      backend.on("upgrade", (_req, socket) => {
+        // Next.js dev rejects a WebSocket whose Origin is not in
+        // allowedDevOrigins by writing a bare string with no status line.
+        socket.end("Unauthorized");
+      });
+      await listen(backend);
+      const backendAddr = backend.address();
+      if (!backendAddr || typeof backendAddr === "string") throw new Error("no addr");
+
+      const routes: RouteInfo[] = [{ hostname: "ws.localhost", port: backendAddr.port }];
+      const server = trackServer(
+        createProxyServer({
+          getRoutes: () => routes,
+          proxyPort: TEST_PROXY_PORT,
+          onError: () => {},
+        })
+      );
+      await listen(server);
+
+      const addr = server.address();
+      if (!addr || typeof addr === "string") throw new Error("no addr");
+
+      const result = await new Promise<{ status?: number; failed: boolean }>((resolve) => {
+        const req = http.request({
+          hostname: "127.0.0.1",
+          port: addr.port,
+          path: "/_next/webpack-hmr",
+          headers: {
+            host: "ws.localhost",
+            connection: "Upgrade",
+            upgrade: "websocket",
+            "sec-websocket-version": "13",
+            "sec-websocket-key": "dGhlIHNhbXBsZSBub25jZQ==",
+          },
+        });
+        req.on("response", (res) => {
+          res.resume();
+          resolve({ status: res.statusCode, failed: false });
+        });
+        req.on("upgrade", () => resolve({ failed: true }));
+        req.on("error", () => resolve({ failed: true }));
+        req.setTimeout(2000, () => {
+          req.destroy();
+          resolve({ failed: true });
+        });
+        req.end();
+      });
+
+      // The client gets a diagnosable 502 instead of an abrupt connection close.
+      expect(result.failed).toBe(false);
+      expect(result.status).toBe(502);
+    });
+
+    it("forwards backend Sec-WebSocket-Accept and custom headers", async () => {
+      const testAcceptValue = "dGhlIHNhbXBsZSBub25jZQ==";
+      const testProtocol = "graphql-ws";
+
+      const backend = trackServer(http.createServer());
+      backend.on("upgrade", (_req, socket) => {
+        socket.write(
+          "HTTP/1.1 101 Switching Protocols\r\n" +
+            "Upgrade: websocket\r\n" +
+            "Connection: Upgrade\r\n" +
+            `Sec-WebSocket-Accept: ${testAcceptValue}\r\n` +
+            `Sec-WebSocket-Protocol: ${testProtocol}\r\n` +
+            "\r\n"
+        );
+        socket.end();
+      });
+      await listen(backend);
+      const backendAddr = backend.address();
+      if (!backendAddr || typeof backendAddr === "string") throw new Error("no addr");
+
+      const routes: RouteInfo[] = [{ hostname: "ws.localhost", port: backendAddr.port }];
+      const server = trackServer(
+        createProxyServer({ getRoutes: () => routes, proxyPort: TEST_PROXY_PORT })
+      );
+      await listen(server);
+
+      const addr = server.address();
+      if (!addr || typeof addr === "string") throw new Error("no addr");
+
+      const result = await new Promise<{
+        upgraded: boolean;
+        accept?: string;
+        protocol?: string;
+      }>((resolve) => {
+        const req = http.request({
+          hostname: "127.0.0.1",
+          port: addr.port,
+          path: "/",
+          headers: {
+            host: "ws.localhost",
+            connection: "Upgrade",
+            upgrade: "websocket",
+          },
+        });
+        req.on("error", () => resolve({ upgraded: false }));
+        req.on("upgrade", (res) => {
+          resolve({
+            upgraded: true,
+            accept: res.headers["sec-websocket-accept"],
+            protocol: res.headers["sec-websocket-protocol"],
+          });
+        });
+        req.setTimeout(2000, () => {
+          req.destroy();
+          resolve({ upgraded: false });
+        });
+        req.end();
+      });
+
+      expect(result.upgraded).toBe(true);
+      expect(result.accept).toBe(testAcceptValue);
+      expect(result.protocol).toBe(testProtocol);
+    });
+
+    it("destroys socket for unknown host on upgrade", async () => {
+      const routes: RouteInfo[] = [];
+      const server = trackServer(
+        createProxyServer({ getRoutes: () => routes, proxyPort: TEST_PROXY_PORT })
+      );
+      await listen(server);
+
+      const addr = server.address();
+      if (!addr || typeof addr === "string") throw new Error("no addr");
+
+      // Attempt a WebSocket upgrade to an unknown host
+      const destroyed = await new Promise<boolean>((resolve) => {
+        const req = http.request({
+          hostname: "127.0.0.1",
+          port: addr.port,
+          path: "/",
+          headers: {
+            host: "unknown.localhost",
+            connection: "Upgrade",
+            upgrade: "websocket",
+          },
+        });
+        req.on("error", () => resolve(true));
+        req.on("close", () => resolve(true));
+        req.on("upgrade", () => resolve(false));
+        req.end();
+      });
+
+      expect(destroyed).toBe(true);
+    });
+  });
+});
+
+describe("createProxyServer with TLS (HTTP/2)", () => {
+  let tlsCert: Buffer;
+  let tlsKey: Buffer;
+  let certDir: string;
+  const servers: AnyServer[] = [];
+
+  function trackServer<T extends AnyServer>(server: T): T {
+    servers.push(server);
+    return server;
+  }
+
+  beforeAll(() => {
+    certDir = fs.mkdtempSync(path.join(os.tmpdir(), "labelhost-proxy-test-"));
+    const certs = ensureCerts(certDir);
+    tlsCert = fs.readFileSync(certs.certPath);
+    tlsKey = fs.readFileSync(certs.keyPath);
+  }, 30_000);
+
+  afterAll(() => {
+    fs.rmSync(certDir, { recursive: true, force: true });
+  });
+
+  afterEach(async () => {
+    // Force-close all servers with a timeout to avoid hanging on open HTTP/2 sessions
+    await Promise.all(
+      servers.map(
+        (s) =>
+          new Promise<void>((resolve) => {
+            s.close(() => resolve());
+            // Force resolve after 1s if connections don't drain
+            setTimeout(resolve, 1000);
+          })
+      )
+    );
+    servers.length = 0;
+  });
+
+  function httpsRequest(
+    server: AnyServer,
+    options: { host?: string; path?: string; method?: string }
+  ): Promise<{ status: number; headers: http.IncomingHttpHeaders; body: string }> {
+    return new Promise((resolve, reject) => {
+      const addr = server.address();
+      if (!addr || typeof addr === "string") {
+        return reject(new Error("Server not listening"));
+      }
+      const req = https.request(
+        {
+          hostname: "127.0.0.1",
+          port: addr.port,
+          path: options.path || "/",
+          method: options.method || "GET",
+          headers: { host: options.host || "" },
+          rejectUnauthorized: false,
+        },
+        (res) => {
+          let body = "";
+          res.on("data", (chunk: Buffer) => (body += chunk));
+          res.on("end", () => resolve({ status: res.statusCode!, headers: res.headers, body }));
+        }
+      );
+      req.on("error", reject);
+      req.end();
+    });
+  }
+
+  it("creates an HTTPS server that responds to requests", async () => {
+    const routes: RouteInfo[] = [];
+    const server = trackServer(
+      createProxyServer({
+        getRoutes: () => routes,
+        proxyPort: TEST_PROXY_PORT,
+        tls: { cert: tlsCert, key: tlsKey },
+      })
+    );
+    await listen(server);
+
+    const res = await httpsRequest(server, { host: "unknown.localhost" });
+    expect(res.status).toBe(404);
+    expect(res.body).toContain("Not Found");
+  });
+
+  it("includes X-Labelhost header on TLS responses", async () => {
+    const routes: RouteInfo[] = [];
+    const server = trackServer(
+      createProxyServer({
+        getRoutes: () => routes,
+        proxyPort: TEST_PROXY_PORT,
+        tls: { cert: tlsCert, key: tlsKey },
+      })
+    );
+    await listen(server);
+
+    const res = await httpsRequest(server, { host: "unknown.localhost" });
+    expect(res.headers[LABELHOST_HEADER.toLowerCase()]).toBe("1");
+  });
+
+  it("proxies HTTPS request to matching route", async () => {
+    const backend = trackServer(
+      http.createServer((_req, res) => {
+        res.writeHead(200, { "Content-Type": "text/plain" });
+        res.end("hello from backend via h2");
+      })
+    );
+    await listen(backend);
+    const backendAddr = backend.address();
+    if (!backendAddr || typeof backendAddr === "string") throw new Error("no addr");
+
+    const routes: RouteInfo[] = [{ hostname: "myapp.localhost", port: backendAddr.port }];
+    const server = trackServer(
+      createProxyServer({
+        getRoutes: () => routes,
+        proxyPort: TEST_PROXY_PORT,
+        tls: { cert: tlsCert, key: tlsKey },
+      })
+    );
+    await listen(server);
+
+    const res = await httpsRequest(server, { host: "myapp.localhost" });
+    expect(res.status).toBe(200);
+    expect(res.body).toBe("hello from backend via h2");
+  });
+
+  it("supports HTTP/2 connections", async () => {
+    const routes: RouteInfo[] = [];
+    const server = trackServer(
+      createProxyServer({
+        getRoutes: () => routes,
+        proxyPort: TEST_PROXY_PORT,
+        tls: { cert: tlsCert, key: tlsKey },
+      })
+    );
+    await listen(server);
+
+    const addr = server.address();
+    if (!addr || typeof addr === "string") throw new Error("no addr");
+
+    const result = await new Promise<{ status: number; protocol: string }>((resolve, reject) => {
+      const client = http2.connect(`https://127.0.0.1:${addr.port}`, {
+        rejectUnauthorized: false,
+      });
+      client.on("error", reject);
+
+      const req = client.request({
+        ":method": "GET",
+        ":path": "/",
+        host: "test.localhost",
+      });
+
+      req.on("response", (headers) => {
+        const status = headers[":status"] as number;
+        req.close();
+        client.close();
+        resolve({ status, protocol: "h2" });
+      });
+
+      req.on("error", reject);
+      req.end();
+    });
+
+    expect(result.status).toBe(404);
+    expect(result.protocol).toBe("h2");
+  });
+
+  it("forwards the :authority hostname as Host to the backend (h2 -> HTTP/1.1)", async () => {
+    let receivedHost = "";
+    const backend = trackServer(
+      http.createServer((req, res) => {
+        receivedHost = req.headers.host || "";
+        res.writeHead(200, { "Content-Type": "text/plain" });
+        res.end("ok");
+      })
+    );
+    await listen(backend);
+    const backendAddr = backend.address();
+    if (!backendAddr || typeof backendAddr === "string") throw new Error("no addr");
+
+    const routes: RouteInfo[] = [{ hostname: "myapp.localhost", port: backendAddr.port }];
+    const server = trackServer(
+      createProxyServer({
+        getRoutes: () => routes,
+        proxyPort: TEST_PROXY_PORT,
+        tls: { cert: tlsCert, key: tlsKey },
+      })
+    );
+    await listen(server);
+
+    const addr = server.address();
+    if (!addr || typeof addr === "string") throw new Error("no addr");
+
+    const status = await new Promise<number>((resolve, reject) => {
+      const client = http2.connect(`https://127.0.0.1:${addr.port}`, {
+        rejectUnauthorized: false,
+      });
+      client.on("error", reject);
+      // Real h2 clients (browsers, curl) send only :authority — no Host header.
+      const req = client.request({
+        ":method": "GET",
+        ":path": "/",
+        ":authority": "myapp.localhost",
+      });
+      req.on("response", (headers) => {
+        const s = headers[":status"] as number;
+        req.resume();
+        req.on("end", () => {
+          client.close();
+          resolve(s);
+        });
+      });
+      req.on("error", reject);
+      req.end();
+    });
+
+    expect(status).toBe(200);
+    expect(receivedHost).toBe("myapp.localhost");
+  });
+
+  it("still accepts HTTP/1.1 connections over TLS (allowHTTP1)", async () => {
+    const routes: RouteInfo[] = [];
+    const server = trackServer(
+      createProxyServer({
+        getRoutes: () => routes,
+        proxyPort: TEST_PROXY_PORT,
+        tls: { cert: tlsCert, key: tlsKey },
+      })
+    );
+    await listen(server);
+
+    const res = await httpsRequest(server, { host: "fallback.localhost" });
+    expect(res.status).toBe(404);
+    expect(res.body).toContain("Not Found");
+  });
+
+  it("generates https:// URLs in 404 page", async () => {
+    const routes: RouteInfo[] = [{ hostname: "myapp.localhost", port: 4001 }];
+    const server = trackServer(
+      createProxyServer({
+        getRoutes: () => routes,
+        proxyPort: TEST_PROXY_PORT,
+        tls: { cert: tlsCert, key: tlsKey },
+      })
+    );
+    await listen(server);
+
+    const res = await httpsRequest(server, { host: "other.localhost" });
+    expect(res.status).toBe(404);
+    expect(res.body).toContain("https://myapp.localhost:1355");
+  });
+
+  it("sets x-forwarded-proto to http for plain HTTP requests on non-TLS proxy", async () => {
+    let receivedProto = "";
+    const backend = trackServer(
+      http.createServer((req, res) => {
+        receivedProto = req.headers["x-forwarded-proto"] as string;
+        res.writeHead(200);
+        res.end("ok");
+      })
+    );
+    await listen(backend);
+    const backendAddr = backend.address();
+    if (!backendAddr || typeof backendAddr === "string") throw new Error("no addr");
+
+    const routes: RouteInfo[] = [{ hostname: "myapp.localhost", port: backendAddr.port }];
+    const server = trackServer(createProxyServer({ getRoutes: () => routes, proxyPort: 80 }));
+    await listen(server);
+
+    await request(server, { host: "myapp.localhost" });
+    expect(receivedProto).toBe("http");
+  });
+
+  it("sets x-forwarded-proto to https when proxying", async () => {
+    let receivedProto = "";
+    const backend = trackServer(
+      http.createServer((req, res) => {
+        receivedProto = req.headers["x-forwarded-proto"] as string;
+        res.writeHead(200);
+        res.end("ok");
+      })
+    );
+    await listen(backend);
+    const backendAddr = backend.address();
+    if (!backendAddr || typeof backendAddr === "string") throw new Error("no addr");
+
+    const routes: RouteInfo[] = [{ hostname: "myapp.localhost", port: backendAddr.port }];
+    const server = trackServer(
+      createProxyServer({
+        getRoutes: () => routes,
+        proxyPort: TEST_PROXY_PORT,
+        tls: { cert: tlsCert, key: tlsKey },
+      })
+    );
+    await listen(server);
+
+    await httpsRequest(server, { host: "myapp.localhost" });
+    expect(receivedProto).toBe("https");
+  });
+
+  it("proxies WebSocket upgrade over TLS", async () => {
+    const backend = trackServer(http.createServer());
+    backend.on("upgrade", (_req, socket) => {
+      socket.write(
+        "HTTP/1.1 101 Switching Protocols\r\n" +
+          "Upgrade: websocket\r\n" +
+          "Connection: Upgrade\r\n" +
+          "\r\n"
+      );
+      socket.end();
+    });
+    await listen(backend);
+    const backendAddr = backend.address();
+    if (!backendAddr || typeof backendAddr === "string") throw new Error("no addr");
+
+    const routes: RouteInfo[] = [{ hostname: "ws.localhost", port: backendAddr.port }];
+    const server = trackServer(
+      createProxyServer({
+        getRoutes: () => routes,
+        proxyPort: TEST_PROXY_PORT,
+        tls: { cert: tlsCert, key: tlsKey },
+      })
+    );
+    await listen(server);
+
+    const addr = server.address();
+    if (!addr || typeof addr === "string") throw new Error("no addr");
+
+    const upgraded = await new Promise<boolean>((resolve) => {
+      const req = https.request({
+        hostname: "127.0.0.1",
+        port: addr.port,
+        path: "/",
+        headers: {
+          host: "ws.localhost",
+          connection: "Upgrade",
+          upgrade: "websocket",
+        },
+        rejectUnauthorized: false,
+      });
+      req.on("error", () => resolve(false));
+      req.on("upgrade", () => resolve(true));
+      req.setTimeout(2000, () => {
+        req.destroy();
+        resolve(false);
+      });
+      req.end();
+    });
+
+    expect(upgraded).toBe(true);
+  });
+
+  /** Open an HTTP/2 client session to the proxy and wait for its SETTINGS frame. */
+  function h2Session(
+    server: AnyServer
+  ): Promise<{ client: http2.ClientHttp2Session; settings: http2.Settings }> {
+    const addr = server.address();
+    if (!addr || typeof addr === "string") throw new Error("no addr");
+    return new Promise((resolve, reject) => {
+      const client = http2.connect(`https://127.0.0.1:${addr.port}`, {
+        rejectUnauthorized: false,
+      });
+      client.on("error", reject);
+      client.on("remoteSettings", (settings) => resolve({ client, settings }));
+    });
+  }
+
+  it("proxies WebSocket over HTTP/2 extended CONNECT (RFC 8441)", async () => {
+    const received: http.IncomingHttpHeaders = {};
+    const backend = trackServer(http.createServer());
+    backend.on("upgrade", (req, socket) => {
+      Object.assign(received, req.headers);
+      const accept = crypto
+        .createHash("sha1")
+        .update(`${req.headers["sec-websocket-key"]}258EAFA5-E914-47DA-95CA-C5AB0DC85B11`)
+        .digest("base64");
+      socket.write(
+        "HTTP/1.1 101 Switching Protocols\r\n" +
+          "Upgrade: websocket\r\n" +
+          "Connection: Upgrade\r\n" +
+          `Sec-WebSocket-Accept: ${accept}\r\n` +
+          "\r\n"
+      );
+      socket.on("data", (d) => socket.write(`echo:${d}`));
+    });
+    await listen(backend);
+    const backendAddr = backend.address();
+    if (!backendAddr || typeof backendAddr === "string") throw new Error("no addr");
+
+    const routes: RouteInfo[] = [{ hostname: "ws.localhost", port: backendAddr.port }];
+    const server = trackServer(
+      createProxyServer({
+        getRoutes: () => routes,
+        proxyPort: TEST_PROXY_PORT,
+        tls: { cert: tlsCert, key: tlsKey },
+      })
+    );
+    await listen(server);
+
+    const { client, settings } = await h2Session(server);
+    try {
+      expect(settings.enableConnectProtocol).toBe(true);
+
+      const result = await new Promise<{
+        status: number;
+        accept?: string;
+        echoed: string;
+      }>((resolve, reject) => {
+        const req = client.request({
+          ":method": "CONNECT",
+          ":protocol": "websocket",
+          ":path": "/_next/webpack-hmr",
+          ":authority": "ws.localhost",
+          ":scheme": "https",
+          "sec-websocket-version": "13",
+        });
+        req.on("error", reject);
+        req.on("response", (headers) => {
+          req.write("ping");
+          req.on("data", (d: Buffer) => {
+            resolve({
+              status: headers[":status"] as number,
+              accept: headers["sec-websocket-accept"] as string | undefined,
+              echoed: d.toString(),
+            });
+            req.close();
+          });
+        });
+      });
+
+      // RFC 8441 handshake succeeds with :status 200 and no Accept header.
+      expect(result.status).toBe(200);
+      expect(result.accept).toBeUndefined();
+      expect(result.echoed).toBe("echo:ping");
+      // The backend saw a synthesized HTTP/1.1 handshake.
+      expect(received.connection).toBe("Upgrade");
+      expect(received.upgrade).toBe("websocket");
+      expect(received["sec-websocket-version"]).toBe("13");
+      expect(Buffer.from(String(received["sec-websocket-key"]), "base64")).toHaveLength(16);
+      expect(received.host).toBe("ws.localhost");
+      expect(received["x-labelhost-hops"]).toBe("1");
+      expect(received["x-forwarded-proto"]).toBe("https");
+    } finally {
+      client.close();
+    }
+  });
+
+  it("proxies WS-over-H2 extended CONNECT with a multi-segment custom TLD (issue #260)", async () => {
+    const backend = trackServer(http.createServer());
+    backend.on("upgrade", (req, socket) => {
+      const accept = crypto
+        .createHash("sha1")
+        .update(`${req.headers["sec-websocket-key"]}258EAFA5-E914-47DA-95CA-C5AB0DC85B11`)
+        .digest("base64");
+      socket.write(
+        "HTTP/1.1 101 Switching Protocols\r\n" +
+          "Upgrade: websocket\r\n" +
+          "Connection: Upgrade\r\n" +
+          `Sec-WebSocket-Accept: ${accept}\r\n` +
+          "\r\n"
+      );
+      socket.on("data", (d) => socket.write(`echo:${d}`));
+    });
+    await listen(backend);
+    const backendAddr = backend.address();
+    if (!backendAddr || typeof backendAddr === "string") throw new Error("no addr");
+
+    const routes: RouteInfo[] = [{ hostname: "myapp.dev.example.com", port: backendAddr.port }];
+    const server = trackServer(
+      createProxyServer({
+        getRoutes: () => routes,
+        proxyPort: TEST_PROXY_PORT,
+        tlds: ["dev.example.com"],
+        tls: { cert: tlsCert, key: tlsKey },
+      })
+    );
+    await listen(server);
+
+    const { client } = await h2Session(server);
+    try {
+      const result = await new Promise<{ status: number; echoed: string }>((resolve, reject) => {
+        const req = client.request({
+          ":method": "CONNECT",
+          ":protocol": "websocket",
+          ":path": "/ws",
+          ":authority": "myapp.dev.example.com",
+          ":scheme": "https",
+          "sec-websocket-version": "13",
+        });
+        req.on("error", reject);
+        req.on("response", (headers) => {
+          req.write("ping");
+          req.on("data", (d: Buffer) => {
+            resolve({ status: headers[":status"] as number, echoed: d.toString() });
+            req.close();
+          });
+        });
+      });
+
+      expect(result.status).toBe(200);
+      expect(result.echoed).toBe("echo:ping");
+    } finally {
+      client.close();
+    }
+  });
+
+  it("answers 502 when the backend's Sec-WebSocket-Accept does not match", async () => {
+    const backend = trackServer(http.createServer());
+    backend.on("upgrade", (_req, socket) => {
+      socket.write(
+        "HTTP/1.1 101 Switching Protocols\r\n" +
+          "Upgrade: websocket\r\n" +
+          "Connection: Upgrade\r\n" +
+          "Sec-WebSocket-Accept: not-the-right-hash\r\n" +
+          "\r\n"
+      );
+      socket.on("data", (d) => socket.write(`leak:${d}`));
+    });
+    await listen(backend);
+    const backendAddr = backend.address();
+    if (!backendAddr || typeof backendAddr === "string") throw new Error("no addr");
+
+    const routes: RouteInfo[] = [{ hostname: "ws.localhost", port: backendAddr.port }];
+    const server = trackServer(
+      createProxyServer({
+        getRoutes: () => routes,
+        proxyPort: TEST_PROXY_PORT,
+        tls: { cert: tlsCert, key: tlsKey },
+        onError: () => {},
+      })
+    );
+    await listen(server);
+
+    const { client } = await h2Session(server);
+    try {
+      const result = await new Promise<{ status: number; body: string }>((resolve, reject) => {
+        const req = client.request({
+          ":method": "CONNECT",
+          ":protocol": "websocket",
+          ":path": "/_next/webpack-hmr",
+          ":authority": "ws.localhost",
+          ":scheme": "https",
+          "sec-websocket-version": "13",
+        });
+        req.on("error", reject);
+        req.on("response", (headers) => {
+          let body = "";
+          req.on("data", (d: Buffer) => (body += d.toString()));
+          req.on("end", () => resolve({ status: headers[":status"] as number, body }));
+        });
+      });
+
+      // The tunnel must not open: no payload from the backend leaks through.
+      expect(result.status).toBe(502);
+      expect(result.body).toContain("invalid response to the WebSocket handshake");
+      expect(result.body).not.toContain("leak:");
+    } finally {
+      client.close();
+    }
+  });
+
+  it("forwards backend rejection of an extended CONNECT as an HTTP response", async () => {
+    const backend = trackServer(http.createServer());
+    backend.on("upgrade", (_req, socket) => {
+      socket.write(
+        "HTTP/1.1 307 Temporary Redirect\r\n" +
+          "Location: /login\r\n" +
+          "Content-Length: 0\r\n" +
+          "\r\n"
+      );
+      socket.end();
+    });
+    await listen(backend);
+    const backendAddr = backend.address();
+    if (!backendAddr || typeof backendAddr === "string") throw new Error("no addr");
+
+    const routes: RouteInfo[] = [{ hostname: "ws.localhost", port: backendAddr.port }];
+    const server = trackServer(
+      createProxyServer({
+        getRoutes: () => routes,
+        proxyPort: TEST_PROXY_PORT,
+        tls: { cert: tlsCert, key: tlsKey },
+      })
+    );
+    await listen(server);
+
+    const { client } = await h2Session(server);
+    try {
+      const result = await new Promise<{ status: number; location?: string }>((resolve, reject) => {
+        const req = client.request({
+          ":method": "CONNECT",
+          ":protocol": "websocket",
+          ":path": "/_next/webpack-hmr",
+          ":authority": "ws.localhost",
+          ":scheme": "https",
+        });
+        req.on("error", reject);
+        req.on("response", (headers) => {
+          resolve({
+            status: headers[":status"] as number,
+            location: headers.location as string | undefined,
+          });
+          req.close();
+        });
+      });
+
+      expect(result.status).toBe(307);
+      expect(result.location).toBe("/login");
+    } finally {
+      client.close();
+    }
+  });
+
+  it("returns 404 for extended CONNECT to an unknown host", async () => {
+    const server = trackServer(
+      createProxyServer({
+        getRoutes: () => [],
+        proxyPort: TEST_PROXY_PORT,
+        tls: { cert: tlsCert, key: tlsKey },
+      })
+    );
+    await listen(server);
+
+    const { client } = await h2Session(server);
+    try {
+      const status = await new Promise<number>((resolve, reject) => {
+        const req = client.request({
+          ":method": "CONNECT",
+          ":protocol": "websocket",
+          ":path": "/",
+          ":authority": "unknown.localhost",
+          ":scheme": "https",
+        });
+        req.on("error", reject);
+        req.on("response", (headers) => {
+          resolve(headers[":status"] as number);
+          req.close();
+        });
+      });
+      expect(status).toBe(404);
+    } finally {
+      client.close();
+    }
+  });
+
+  it("returns 501 for a classic CONNECT without :protocol", async () => {
+    const server = trackServer(
+      createProxyServer({
+        getRoutes: () => [],
+        proxyPort: TEST_PROXY_PORT,
+        tls: { cert: tlsCert, key: tlsKey },
+      })
+    );
+    await listen(server);
+
+    const { client } = await h2Session(server);
+    try {
+      const status = await new Promise<number>((resolve, reject) => {
+        const req = client.request({
+          ":method": "CONNECT",
+          ":authority": "example.com:443",
+        });
+        req.on("error", reject);
+        req.on("response", (headers) => {
+          resolve(headers[":status"] as number);
+          req.close();
+        });
+      });
+      expect(status).toBe(501);
+    } finally {
+      client.close();
+    }
+  });
+
+  it("proxies plain-HTTP WebSocket upgrades on the TLS port instead of dropping them", async () => {
+    const backend = trackServer(http.createServer());
+    backend.on("upgrade", (_req, socket) => {
+      socket.write(
+        "HTTP/1.1 101 Switching Protocols\r\n" +
+          "Upgrade: websocket\r\n" +
+          "Connection: Upgrade\r\n" +
+          "\r\n"
+      );
+      socket.end();
+    });
+    await listen(backend);
+    const backendAddr = backend.address();
+    if (!backendAddr || typeof backendAddr === "string") throw new Error("no addr");
+
+    const routes: RouteInfo[] = [{ hostname: "ws.localhost", port: backendAddr.port }];
+    const server = trackServer(
+      createProxyServer({
+        getRoutes: () => routes,
+        proxyPort: TEST_PROXY_PORT,
+        tls: { cert: tlsCert, key: tlsKey },
+      })
+    );
+    await listen(server);
+    const addr = server.address();
+    if (!addr || typeof addr === "string") throw new Error("no addr");
+
+    const upgraded = await new Promise<boolean>((resolve) => {
+      const req = http.request({
+        hostname: "127.0.0.1",
+        port: addr.port,
+        path: "/",
+        headers: {
+          host: "ws.localhost",
+          connection: "Upgrade",
+          upgrade: "websocket",
+        },
+      });
+      req.on("error", () => resolve(false));
+      req.on("upgrade", () => resolve(true));
+      req.setTimeout(2000, () => {
+        req.destroy();
+        resolve(false);
+      });
+      req.end();
+    });
+
+    expect(upgraded).toBe(true);
+  });
+
+  it("redirects plain HTTP to HTTPS on the TLS-enabled port", async () => {
+    const routes: RouteInfo[] = [];
+    const server = trackServer(
+      createProxyServer({
+        getRoutes: () => routes,
+        proxyPort: 443,
+        tls: { cert: tlsCert, key: tlsKey },
+      })
+    );
+    await listen(server);
+
+    const res = await request(server, { host: "myapp.localhost", path: "/dashboard" });
+    expect(res.status).toBe(302);
+    expect(res.headers.location).toBe("https://myapp.localhost/dashboard");
+  });
+
+  it("includes port in redirect Location when proxy is not on 443", async () => {
+    const routes: RouteInfo[] = [];
+    const server = trackServer(
+      createProxyServer({
+        getRoutes: () => routes,
+        proxyPort: TEST_PROXY_PORT,
+        tls: { cert: tlsCert, key: tlsKey },
+      })
+    );
+    await listen(server);
+
+    const res = await request(server, { host: "myapp.localhost" });
+    expect(res.status).toBe(302);
+    expect(res.headers.location).toBe(`https://myapp.localhost:${TEST_PROXY_PORT}/`);
+  });
+
+  it("includes X-Labelhost header in HTTP-to-HTTPS redirect", async () => {
+    const server = trackServer(
+      createProxyServer({
+        getRoutes: () => [],
+        proxyPort: 443,
+        tls: { cert: tlsCert, key: tlsKey },
+      })
+    );
+    await listen(server);
+
+    const res = await request(server, { host: "myapp.localhost" });
+    expect(res.status).toBe(302);
+    expect(res.headers["x-labelhost"]).toBe("1");
+  });
+
+  it("strips hop-by-hop headers from proxied TLS responses (HTTP/2 client)", async () => {
+    const backend = trackServer(
+      http.createServer((_req, res) => {
+        // Backend sends hop-by-hop headers that are invalid in HTTP/2
+        res.writeHead(200, {
+          "Content-Type": "text/plain",
+          Connection: "keep-alive",
+          "Keep-Alive": "timeout=5",
+          "X-Custom": "preserved",
+        });
+        res.end("ok");
+      })
+    );
+    await listen(backend);
+    const backendAddr = backend.address();
+    if (!backendAddr || typeof backendAddr === "string") throw new Error("no addr");
+
+    const routes: RouteInfo[] = [{ hostname: "hop.localhost", port: backendAddr.port }];
+    const server = trackServer(
+      createProxyServer({
+        getRoutes: () => routes,
+        proxyPort: TEST_PROXY_PORT,
+        tls: { cert: tlsCert, key: tlsKey },
+      })
+    );
+    await listen(server);
+
+    const addr = server.address();
+    if (!addr || typeof addr === "string") throw new Error("no addr");
+
+    // Use HTTP/2 client; hop-by-hop headers must be stripped for HTTP/2
+    const result = await new Promise<{
+      status: number;
+      headers: Record<string, string>;
+      body: string;
+    }>((resolve, reject) => {
+      const client = http2.connect(`https://127.0.0.1:${addr.port}`, {
+        rejectUnauthorized: false,
+      });
+      client.on("error", reject);
+
+      const req = client.request({
+        ":method": "GET",
+        ":path": "/",
+        host: "hop.localhost",
+      });
+
+      let status = 0;
+      const responseHeaders: Record<string, string> = {};
+      req.on("response", (headers) => {
+        status = headers[":status"] as number;
+        for (const [key, value] of Object.entries(headers)) {
+          if (key !== ":status" && typeof value === "string") {
+            responseHeaders[key] = value;
+          }
+        }
+      });
+
+      let body = "";
+      req.on("data", (chunk: Buffer) => (body += chunk));
+      req.on("end", () => {
+        client.close();
+        resolve({ status, headers: responseHeaders, body });
+      });
+      req.on("error", reject);
+      req.end();
+    });
+
+    expect(result.status).toBe(200);
+    expect(result.headers["connection"]).toBeUndefined();
+    expect(result.headers["keep-alive"]).toBeUndefined();
+    expect(result.headers["x-custom"]).toBe("preserved");
+    expect(result.body).toBe("ok");
+  });
+
+  // streamResetBurst/streamResetRate server options require Node 22.11+;
+  // on older versions they are silently ignored and GOAWAY fires at ~1000 resets.
+  // Also skipped on Windows where the rapid burst overwhelms the test backend.
+  const [nodeMajor, nodeMinor] = process.versions.node.split(".").map(Number);
+  it.skipIf(nodeMajor < 22 || (nodeMajor === 22 && nodeMinor < 11) || process.platform === "win32")(
+    "session survives sustained stream cancellation (issues #217, #221)",
+    async () => {
+      const backend = trackServer(
+        http.createServer((_req, res) => {
+          res.writeHead(200, { "Content-Type": "text/plain" });
+          res.end("ok");
+        })
+      );
+      await listen(backend);
+      const backendAddr = backend.address();
+      if (!backendAddr || typeof backendAddr === "string") throw new Error("no addr");
+
+      const routes: RouteInfo[] = [{ hostname: "h2burst.localhost", port: backendAddr.port }];
+      const server = trackServer(
+        createProxyServer({
+          getRoutes: () => routes,
+          proxyPort: TEST_PROXY_PORT,
+          tls: { cert: tlsCert, key: tlsKey },
+        })
+      );
+      await listen(server);
+
+      const addr = server.address();
+      if (!addr || typeof addr === "string") throw new Error("no addr");
+
+      // Simulate Vite/Nuxt HMR: sustained bursts of stream cancellations.
+      // Without streamResetBurst/streamResetRate tuning, Node sends GOAWAY
+      // INTERNAL_ERROR (code 2) after ~1000 cumulative resets, killing the
+      // HTTP/2 session and causing ERR_HTTP2_PROTOCOL_ERROR in Chrome.
+      const client = http2.connect(`https://127.0.0.1:${addr.port}`, {
+        rejectUnauthorized: false,
+      });
+
+      let gotGoaway = false;
+      client.on("goaway", () => {
+        gotGoaway = true;
+      });
+      client.on("error", () => {});
+
+      // Send 1500 resets in rapid batches (exceeds the ~1000 threshold that
+      // triggers GOAWAY on an untuned server).
+      const TOTAL = 1500;
+      const BATCH = 100;
+      let sent = 0;
+      await new Promise<void>((resolve) => {
+        const timer = setInterval(() => {
+          if (gotGoaway || sent >= TOTAL) {
+            clearInterval(timer);
+            resolve();
+            return;
+          }
+          for (let i = 0; i < BATCH && sent < TOTAL; i++) {
+            const req = client.request({
+              ":method": "GET",
+              ":path": `/${sent}`,
+              host: "h2burst.localhost",
+            });
+            req.on("error", () => {});
+            req.close(http2.constants.NGHTTP2_CANCEL);
+            sent++;
+          }
+        }, 10);
+      });
+
+      // Verify the session is still alive with a real request
+      let finalStatus = 0;
+      if (!client.destroyed && !client.closed) {
+        finalStatus = await new Promise<number>((resolve, reject) => {
+          const req = client.request({
+            ":method": "GET",
+            ":path": "/final",
+            host: "h2burst.localhost",
+          });
+          req.on("response", (headers) => {
+            req.close();
+            resolve(headers[":status"] as number);
+          });
+          req.on("error", reject);
+          req.end();
+        });
+      }
+
+      client.close();
+      expect(gotGoaway).toBe(false);
+      expect(finalStatus).toBe(200);
+    },
+    15_000
+  );
+});

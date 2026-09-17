@@ -1,4 +1,4 @@
-const REPO = "vercel-labs/portless";
+const REPO = "WataruNishimura/portless";
 const REVALIDATE = 86400;
 
 export async function getStarCount(): Promise<string> {

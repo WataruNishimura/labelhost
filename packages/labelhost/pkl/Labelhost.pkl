@@ -1,0 +1,59 @@
+/// Schema for labelhost configuration.
+///
+/// Write `labelhost.pkl` next to your `package.json` and amend this module:
+///
+///     amends "https://raw.githubusercontent.com/WataruNishimura/portless/main/packages/labelhost/pkl/Labelhost.pkl"
+///
+///     name = "myapp"
+///     hostnameTemplate = "{{worktree}}.{{name}}.dev"
+///
+/// Amending gets you completion and typo detection: a misspelled property is
+/// an error at evaluation time rather than a setting that silently does
+/// nothing. When the package is installed locally you can amend the copy in
+/// `node_modules/labelhost/pkl/Labelhost.pkl` instead of fetching over HTTP.
+///
+/// labelhost evaluates this with `pkl eval --format json`, so the pkl CLI must
+/// be on PATH (or pointed at by LABELHOST_PKL_BIN).
+@ModuleInfo { minPklVersion = "0.25.0" }
+module Labelhost
+
+/// Per-app settings. Used both at the top level in single-app mode and for
+/// each entry of `apps` in a workspace.
+open class AppSettings {
+  /// Base app name. The worktree prefix still applies. Inferred from
+  /// package.json when unset.
+  name: String(!isEmpty)?
+
+  /// Hostname pattern, evaluated before the proxy TLD is appended.
+  /// Supports the `{{name}}` and `{{worktree}}` placeholders; an empty
+  /// worktree resolves to a removed label.
+  hostnameTemplate: String(!isEmpty, contains("{{"))?
+
+  /// Name of a package.json script to run. Defaults to "dev".
+  script: String(!isEmpty)?
+
+  /// Fixed port for the child process. Allocated automatically when unset.
+  appPort: Int(isBetween(1, 65535))?
+
+  /// Whether to route this app through the proxy. Auto-detected when unset.
+  proxy: Boolean?
+}
+
+name: String(!isEmpty)?
+
+hostnameTemplate: String(!isEmpty, contains("{{"))?
+
+script: String(!isEmpty)?
+
+appPort: Int(isBetween(1, 65535))?
+
+proxy: Boolean?
+
+/// Overrides for workspace packages, keyed by path relative to the workspace
+/// root (for example "apps/web"). When set, the top-level fields above apply
+/// only in single-app mode.
+apps: Mapping<String(!isEmpty), AppSettings>?
+
+/// Set to false to spawn workspace packages directly instead of through
+/// turborepo. Defaults to true.
+turbo: Boolean?
