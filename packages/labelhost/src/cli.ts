@@ -1818,6 +1818,11 @@ ${colors.bold("Configuration (labelhost.json):")}
   hostnameTemplate supports {{name}} and {{worktree}}. It is evaluated before
   labelhost adds the proxy TLD; an empty worktree label is removed.
 
+  Config is read from labelhost.pkl, then labelhost.json, then portless.json,
+  then a "labelhost" or "portless" key in package.json. A labelhost.pkl is
+  evaluated with the pkl CLI (https://pkl-lang.org); amend the shipped
+  Labelhost.pkl schema to get typo and range checking.
+
 ${colors.bold("In package.json:")}
   {
     "scripts": {
@@ -1917,28 +1922,29 @@ ${colors.bold("Options:")}
   --                            Stop flag parsing; everything after is passed to the child
 
 ${colors.bold("Environment variables:")}
-  LABELHOST_PORT=<number>        Override the default proxy port (e.g. in .bashrc)
-  LABELHOST_APP_PORT=<number>    Use a fixed port for the app (same as --app-port)
-  LABELHOST_HTTPS=0              Disable HTTPS (same as --no-tls)
-  LABELHOST_LAN=1                Enable LAN mode when set to 1 (set in .bashrc / .zshrc)
-  LABELHOST_LAN_IP=<address>     Pin a specific LAN IP for LAN mode
-  LABELHOST_TLD=<tld>[,<tld>]    Use one or more TLDs (e.g. localhost,test,dev.example.com)
-  LABELHOST_WILDCARD=1           Allow unregistered subdomains to fall back to parent route
-  LABELHOST_SYNC_HOSTS=0         Disable auto-sync of ${HOSTS_DISPLAY} (on by default)
-  LABELHOST_TAILSCALE=1          Share apps on your Tailscale network (same as --tailscale)
-  LABELHOST_FUNNEL=1             Share apps publicly via Tailscale Funnel (same as --funnel)
-  LABELHOST_NGROK=1              Share apps publicly via ngrok (same as --ngrok)
-  LABELHOST_STATE_DIR=<path>     Override the state directory
-  PORTLESS=0                    Run command directly without proxy
+  LABELHOST_PORT=<number>      Override the default proxy port (e.g. in .bashrc)
+  LABELHOST_APP_PORT=<number>  Use a fixed port for the app (same as --app-port)
+  LABELHOST_HTTPS=0            Disable HTTPS (same as --no-tls)
+  LABELHOST_LAN=1              Enable LAN mode when set to 1 (set in .bashrc / .zshrc)
+  LABELHOST_LAN_IP=<address>   Pin a specific LAN IP for LAN mode
+  LABELHOST_TLD=<tld>[,<tld>]  Use one or more TLDs (e.g. localhost,test,dev.example.com)
+  LABELHOST_WILDCARD=1         Allow unregistered subdomains to fall back to parent route
+  LABELHOST_SYNC_HOSTS=0       Disable auto-sync of ${HOSTS_DISPLAY} (on by default)
+  LABELHOST_TAILSCALE=1        Share apps on your Tailscale network (same as --tailscale)
+  LABELHOST_FUNNEL=1           Share apps publicly via Tailscale Funnel (same as --funnel)
+  LABELHOST_NGROK=1            Share apps publicly via ngrok (same as --ngrok)
+  LABELHOST_STATE_DIR=<path>   Override the state directory
+  LABELHOST_PKL_BIN=<path>     Path to the pkl CLI (for labelhost.pkl config)
+  LABELHOST=0                  Run command directly without proxy
 
 ${colors.bold("Child process environment:")}
-  PORT                          Ephemeral port the child should listen on
-  HOST                          Usually 127.0.0.1 (omitted for Expo in LAN mode)
-  LABELHOST_URL                  Primary public URL of the app
-  LABELHOST_LAN                  Set to 1 when proxy is in LAN mode
-  LABELHOST_TAILSCALE_URL        Tailscale URL of the app (when --tailscale is active)
-  LABELHOST_NGROK_URL            ngrok URL of the app (when --ngrok is active)
-  NODE_EXTRA_CA_CERTS           Path to the labelhost CA (set when HTTPS is active)
+  PORT                     Ephemeral port the child should listen on
+  HOST                     Usually 127.0.0.1 (omitted for Expo in LAN mode)
+  LABELHOST_URL            Primary public URL of the app
+  LABELHOST_LAN            Set to 1 when proxy is in LAN mode
+  LABELHOST_TAILSCALE_URL  Tailscale URL of the app (when --tailscale is active)
+  LABELHOST_NGROK_URL      ngrok URL of the app (when --ngrok is active)
+  NODE_EXTRA_CA_CERTS      Path to the labelhost CA (set when HTTPS is active)
 
 ${colors.bold("Safari / DNS:")}
   .localhost subdomains auto-resolve in Chrome, Firefox, and Edge.
@@ -1950,7 +1956,7 @@ ${colors.bold("Safari / DNS:")}
     ${colors.cyan("labelhost hosts clean")}
 
 ${colors.bold("Skip labelhost:")}
-  PORTLESS=0 pnpm dev           # Runs command directly without proxy
+  LABELHOST=0 pnpm dev           # Runs command directly without proxy
 
 ${colors.bold("Reserved names:")}
   run, get, alias, hosts, list, doctor, trust, clean, prune, proxy, service are subcommands and
@@ -4346,9 +4352,9 @@ async function main() {
       process.exit(1);
     }
     const skipLabelhost =
-      process.env.PORTLESS === "0" ||
-      process.env.PORTLESS === "false" ||
-      process.env.PORTLESS === "skip";
+      process.env.LABELHOST === "0" ||
+      process.env.LABELHOST === "false" ||
+      process.env.LABELHOST === "skip";
     if (skipLabelhost) {
       const { commandArgs } = parseAppArgs(args);
       if (commandArgs.length === 0) {
@@ -4369,9 +4375,9 @@ async function main() {
   }
 
   const skipLabelhost =
-    process.env.PORTLESS === "0" ||
-    process.env.PORTLESS === "false" ||
-    process.env.PORTLESS === "skip";
+    process.env.LABELHOST === "0" ||
+    process.env.LABELHOST === "false" ||
+    process.env.LABELHOST === "skip";
   if (
     skipLabelhost &&
     (isRunCommand ||

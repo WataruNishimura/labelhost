@@ -86,6 +86,35 @@ Each `apps` entry has the same shape (`name`, `hostnameTemplate`, `script`, `app
 
 `hostnameTemplate` is evaluated before labelhost adds the proxy TLD. `{{name}}` is the configured or inferred app name and `{{worktree}}` is the linked-worktree branch prefix. If there is no worktree prefix, its complete dot-delimited label is removed. For example, `{{worktree}}.{{name}}.dev` resolves to `myapp.dev.localhost` in the primary checkout and `feature-auth.myapp.dev.localhost` in a linked worktree.
 
+### Pkl config
+
+Config can be written in [Pkl](https://pkl-lang.org) instead of JSON. Put a
+`labelhost.pkl` next to your `package.json` and amend the shipped schema:
+
+```pkl
+amends "https://raw.githubusercontent.com/WataruNishimura/portless/main/packages/labelhost/pkl/Labelhost.pkl"
+
+name = "myapp"
+hostnameTemplate = "{{worktree}}.{{name}}.dev"
+
+apps {
+  ["apps/web"] { appPort = 3000 }
+  ["apps/api"] { name = "api.myapp"; proxy = false }
+}
+```
+
+Amending the schema is the point: a misspelled property or an out-of-range
+port fails at evaluation time, pointing at the offending line, instead of
+being silently ignored the way an unknown JSON key is. When the package is
+installed locally, amend `node_modules/labelhost/pkl/Labelhost.pkl` to avoid
+fetching over HTTP.
+
+This requires the [pkl CLI](https://pkl-lang.org/main/current/pkl-cli/index.html)
+on `PATH`, or `LABELHOST_PKL_BIN` pointing at it. Only projects with a
+`labelhost.pkl` need it. A `labelhost.pkl` that fails to evaluate is reported
+as an error rather than skipped, so a broken config never starts an app under
+the wrong hostname.
+
 ### package.json "labelhost" key
 
 Instead of a separate `labelhost.json`, you can add a `"labelhost"` key to your `package.json`. A string value is shorthand for setting the name:
@@ -224,7 +253,7 @@ For `appPort`: CLI `--app-port` flag > `LABELHOST_APP_PORT` env var > `package.j
       <td>off</td>
     </tr>
     <tr>
-      <td>`PORTLESS`</td>
+      <td>`LABELHOST`</td>
       <td>Set to `0` to bypass the proxy</td>
       <td>enabled</td>
     </tr>

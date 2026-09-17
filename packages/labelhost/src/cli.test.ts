@@ -100,7 +100,7 @@ function captureBypassedExpo(args: string[]): {
     const { status } = run(args, {
       env: {
         PATH: `${shimDir}${path.delimiter}${process.env.PATH ?? ""}`,
-        PORTLESS: "0",
+        LABELHOST: "0",
         LABELHOST_TEST_CAPTURE_FILE: capturePath,
       },
     });
@@ -202,6 +202,8 @@ describe("CLI", () => {
       expect(stdout).toContain("LABELHOST_STATE_DIR");
       expect(stdout).toContain("LABELHOST_URL");
       expect(stdout).toContain("hostnameTemplate");
+      expect(stdout).toContain("labelhost.pkl");
+      expect(stdout).toContain("LABELHOST_PKL_BIN");
       expect(stdout).toContain("--ngrok");
       expect(stdout).toContain("LABELHOST_NGROK");
       expect(stdout).toContain("LABELHOST_NGROK_URL");
@@ -515,9 +517,9 @@ describe("CLI", () => {
       }
     });
 
-    it("does not bypass doctor when PORTLESS=0 is set", () => {
+    it("does not bypass doctor when LABELHOST=0 is set", () => {
       const { status, stderr } = run(["doctor", "typo"], {
-        env: { PORTLESS: "0" },
+        env: { LABELHOST: "0" },
       });
       expect(status).toBe(1);
       expect(stderr).toContain("Unknown argument");
@@ -551,9 +553,9 @@ describe("CLI", () => {
       expect(stdout).toContain("service status");
     });
 
-    it("still dispatches service help when PORTLESS=0", () => {
+    it("still dispatches service help when LABELHOST=0", () => {
       const { status, stdout } = run(["service", "--help"], {
-        env: { PORTLESS: "0" },
+        env: { LABELHOST: "0" },
       });
       expect(status).toBe(0);
       expect(stdout).toContain("labelhost service");
@@ -569,30 +571,30 @@ describe("CLI", () => {
     });
   });
 
-  describe("PORTLESS=0 bypass", () => {
-    it("runs command directly when PORTLESS=0 is set", () => {
+  describe("LABELHOST=0 bypass", () => {
+    it("runs command directly when LABELHOST=0 is set", () => {
       const { status, stdout } = run(["myapp", "echo", "hello"], {
-        env: { PORTLESS: "0" },
+        env: { LABELHOST: "0" },
       });
       expect(status).toBe(0);
       expect(stdout.trim()).toBe("hello");
     });
 
-    it("runs command directly when PORTLESS=skip is set", () => {
+    it("runs command directly when LABELHOST=skip is set", () => {
       const { status, stdout } = run(["myapp", "echo", "bypassed"], {
-        env: { PORTLESS: "skip" },
+        env: { LABELHOST: "skip" },
       });
       expect(status).toBe(0);
       expect(stdout.trim()).toBe("bypassed");
     });
 
-    it("does not bypass proxy commands when PORTLESS=0 is set", async () => {
+    it("does not bypass proxy commands when LABELHOST=0 is set", async () => {
       // 'proxy stop' should still be handled as a proxy command, not bypassed
       const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "labelhost-bypass-proxy-"));
       const proxyPort = await getFreePort();
       const { stderr } = run(["proxy", "stop"], {
         env: {
-          PORTLESS: "0",
+          LABELHOST: "0",
           LABELHOST_PORT: proxyPort.toString(),
           LABELHOST_STATE_DIR: tmpDir,
         },
@@ -604,16 +606,16 @@ describe("CLI", () => {
 
     it("passes through exit code from bypassed command", () => {
       const { status } = run(["myapp", "node", "-e", "process.exit(42)"], {
-        env: { PORTLESS: "0" },
+        env: { LABELHOST: "0" },
       });
       expect(status).toBe(42);
     });
   });
 
-  describe("PORTLESS=0 bypass with run subcommand", () => {
+  describe("LABELHOST=0 bypass with run subcommand", () => {
     it("runs command directly in run mode", () => {
       const { status, stdout } = run(["run", "echo", "hello"], {
-        env: { PORTLESS: "0" },
+        env: { LABELHOST: "0" },
       });
       expect(status).toBe(0);
       expect(stdout.trim()).toBe("hello");
@@ -621,7 +623,7 @@ describe("CLI", () => {
 
     it("strips --force but passes child --force through", () => {
       const { status, stdout } = run(["run", "--force", "echo", "--force", "kept"], {
-        env: { PORTLESS: "0" },
+        env: { LABELHOST: "0" },
       });
       expect(status).toBe(0);
       expect(stdout.trim()).toBe("--force kept");
@@ -629,7 +631,7 @@ describe("CLI", () => {
 
     it("passes -- separator through to child command", () => {
       const { status, stdout } = run(["run", "--", "echo", "hello"], {
-        env: { PORTLESS: "0" },
+        env: { LABELHOST: "0" },
       });
       expect(status).toBe(0);
       expect(stdout.trim()).toBe("hello");
@@ -637,25 +639,25 @@ describe("CLI", () => {
   });
 
   describe("--force positioning", () => {
-    it("accepts --force before name (PORTLESS=0)", () => {
+    it("accepts --force before name (LABELHOST=0)", () => {
       const { status, stdout } = run(["--force", "myapp", "echo", "ok"], {
-        env: { PORTLESS: "0" },
+        env: { LABELHOST: "0" },
       });
       expect(status).toBe(0);
       expect(stdout.trim()).toBe("ok");
     });
 
-    it("accepts --force after name (PORTLESS=0)", () => {
+    it("accepts --force after name (LABELHOST=0)", () => {
       const { status, stdout } = run(["myapp", "--force", "echo", "ok"], {
-        env: { PORTLESS: "0" },
+        env: { LABELHOST: "0" },
       });
       expect(status).toBe(0);
       expect(stdout.trim()).toBe("ok");
     });
 
-    it("does not strip child command --force (PORTLESS=0)", () => {
+    it("does not strip child command --force (LABELHOST=0)", () => {
       const { status, stdout } = run(["myapp", "echo", "--force", "kept"], {
-        env: { PORTLESS: "0" },
+        env: { LABELHOST: "0" },
       });
       expect(status).toBe(0);
       expect(stdout.trim()).toBe("--force kept");
@@ -694,10 +696,10 @@ describe("CLI", () => {
     });
 
     it("does not dispatch 'list' as the global list command", () => {
-      // With PORTLESS=0, "run list" should try to exec "list" as a child
+      // With LABELHOST=0, "run list" should try to exec "list" as a child
       // process (which will ENOENT), not show routes.
       const { stdout } = run(["run", "list"], {
-        env: { PORTLESS: "0" },
+        env: { LABELHOST: "0" },
       });
       // If it mistakenly ran the global "list" handler, status would be 0
       // and stdout would contain route output. Instead it should try to
@@ -733,7 +735,7 @@ describe("CLI", () => {
     ])("accepts global --lan %s", (_label, prefix) => {
       const { status, stdout } = run(
         [...prefix, "node", "-e", "process.stdout.write(process.env.LABELHOST_LAN)"],
-        { env: { PORTLESS: "0" } }
+        { env: { LABELHOST: "0" } }
       );
       expect(status).toBe(0);
       expect(stdout).toBe("1");
@@ -779,7 +781,7 @@ describe("CLI", () => {
           "-e",
           "process.stdout.write(process.env.LABELHOST_LAN)",
         ],
-        { env: { PORTLESS: "0" } }
+        { env: { LABELHOST: "0" } }
       );
       expect(status).toBe(0);
       expect(stdout).toBe("1");
@@ -802,9 +804,9 @@ describe("CLI", () => {
   });
 
   describe("--app-port flag", () => {
-    it("passes --app-port through in bypass mode (PORTLESS=0)", () => {
+    it("passes --app-port through in bypass mode (LABELHOST=0)", () => {
       const { status, stdout } = run(["run", "--app-port", "4567", "echo", "ok"], {
-        env: { PORTLESS: "0" },
+        env: { LABELHOST: "0" },
       });
       expect(status).toBe(0);
       expect(stdout.trim()).toBe("ok");
@@ -812,7 +814,7 @@ describe("CLI", () => {
 
     it("rejects invalid --app-port value", () => {
       const { status, stderr } = run(["run", "--app-port", "abc", "echo", "ok"], {
-        env: { PORTLESS: "0" },
+        env: { LABELHOST: "0" },
       });
       expect(status).toBe(1);
       expect(stderr).toContain("Invalid app port");
@@ -820,15 +822,15 @@ describe("CLI", () => {
 
     it("rejects --app-port without a value", () => {
       const { status, stderr } = run(["run", "--app-port"], {
-        env: { PORTLESS: "0" },
+        env: { LABELHOST: "0" },
       });
       expect(status).toBe(1);
       expect(stderr).toContain("--app-port requires");
     });
 
-    it("accepts --app-port in named mode (PORTLESS=0)", () => {
+    it("accepts --app-port in named mode (LABELHOST=0)", () => {
       const { status, stdout } = run(["myapp", "--app-port", "3000", "echo", "ok"], {
-        env: { PORTLESS: "0" },
+        env: { LABELHOST: "0" },
       });
       expect(status).toBe(0);
       expect(stdout.trim()).toBe("ok");
@@ -924,11 +926,11 @@ describe("CLI", () => {
       expect(stderr).toContain("Unknown argument");
     });
 
-    it("does not bypass when PORTLESS=0 is set", () => {
+    it("does not bypass when LABELHOST=0 is set", () => {
       const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "labelhost-bypass-clean-"));
       const { stderr } = run(["clean"], {
         env: {
-          PORTLESS: "0",
+          LABELHOST: "0",
           LABELHOST_STATE_DIR: tmpDir,
         },
       });
@@ -936,8 +938,8 @@ describe("CLI", () => {
       expect(stderr).not.toContain("ENOENT");
     });
 
-    it("does not bypass clean with extra args when PORTLESS=0", () => {
-      const { status, stderr } = run(["clean", "typo"], { env: { PORTLESS: "0" } });
+    it("does not bypass clean with extra args when LABELHOST=0", () => {
+      const { status, stderr } = run(["clean", "typo"], { env: { LABELHOST: "0" } });
       expect(status).toBe(1);
       expect(stderr).toContain("Unknown argument");
     });
@@ -1615,17 +1617,17 @@ describe("CLI", () => {
   });
 
   describe("--name flag", () => {
-    it("treats reserved word as app name with PORTLESS=0", () => {
+    it("treats reserved word as app name with LABELHOST=0", () => {
       const { status, stdout } = run(["--name", "run", "echo", "ok"], {
-        env: { PORTLESS: "0" },
+        env: { LABELHOST: "0" },
       });
       expect(status).toBe(0);
       expect(stdout.trim()).toBe("ok");
     });
 
-    it("passes --force through with --name (PORTLESS=0)", () => {
+    it("passes --force through with --name (LABELHOST=0)", () => {
       const { status, stdout } = run(["--name", "alias", "--force", "echo", "ok"], {
-        env: { PORTLESS: "0" },
+        env: { LABELHOST: "0" },
       });
       expect(status).toBe(0);
       expect(stdout.trim()).toBe("ok");
@@ -1651,9 +1653,9 @@ describe("CLI", () => {
       expect(stdout).toContain("--name");
     });
 
-    it("strips --name and passes command through (PORTLESS=0)", () => {
+    it("strips --name and passes command through (LABELHOST=0)", () => {
       const { status, stdout } = run(["run", "--name", "custom", "echo", "ok"], {
-        env: { PORTLESS: "0" },
+        env: { LABELHOST: "0" },
       });
       expect(status).toBe(0);
       expect(stdout.trim()).toBe("ok");
@@ -1671,17 +1673,17 @@ describe("CLI", () => {
       expect(stderr).toContain("--name requires");
     });
 
-    it("combines --name with --force (PORTLESS=0)", () => {
+    it("combines --name with --force (LABELHOST=0)", () => {
       const { status, stdout } = run(["run", "--name", "foo", "--force", "echo", "ok"], {
-        env: { PORTLESS: "0" },
+        env: { LABELHOST: "0" },
       });
       expect(status).toBe(0);
       expect(stdout.trim()).toBe("ok");
     });
 
-    it("does not consume --name after -- separator (PORTLESS=0)", () => {
+    it("does not consume --name after -- separator (LABELHOST=0)", () => {
       const { status, stdout } = run(["run", "--", "echo", "--name", "foo"], {
-        env: { PORTLESS: "0" },
+        env: { LABELHOST: "0" },
       });
       expect(status).toBe(0);
       expect(stdout.trim()).toBe("--name foo");
@@ -1856,7 +1858,7 @@ describe("CLI", () => {
       );
       const { status, stdout } = run([], {
         cwd: tmpDir,
-        env: { PORTLESS: "0" },
+        env: { LABELHOST: "0" },
       });
       expect(status).toBe(0);
       expect(stdout).toContain("hello");
@@ -2092,7 +2094,7 @@ describe("CLI", () => {
       fs.writeFileSync(path.join(tmpDir, "labelhost.json"), JSON.stringify({ name: "myapp" }));
       const { stdout } = run(["run"], {
         cwd: tmpDir,
-        env: { PORTLESS: "0" },
+        env: { LABELHOST: "0" },
       });
       expect(stdout).toContain("config-dev");
     });
@@ -2104,7 +2106,7 @@ describe("CLI", () => {
       );
       const { stdout } = run(["run"], {
         cwd: tmpDir,
-        env: { PORTLESS: "0" },
+        env: { LABELHOST: "0" },
       });
       expect(stdout).toContain("hello");
     });
@@ -2120,7 +2122,7 @@ describe("CLI", () => {
       );
       const { stdout } = run(["run", "echo", "from-cli"], {
         cwd: tmpDir,
-        env: { PORTLESS: "0" },
+        env: { LABELHOST: "0" },
       });
       expect(stdout).toContain("from-cli");
       expect(stdout).not.toContain("from-config");
@@ -2140,7 +2142,7 @@ describe("CLI", () => {
       );
       const { stdout } = run(["run"], {
         cwd: tmpDir,
-        env: { PORTLESS: "0" },
+        env: { LABELHOST: "0" },
       });
       expect(stdout).toContain("from-start");
     });
@@ -2159,7 +2161,7 @@ describe("CLI", () => {
       );
       const { stdout } = run(["--script", "start", "run"], {
         cwd: tmpDir,
-        env: { PORTLESS: "0" },
+        env: { LABELHOST: "0" },
       });
       expect(stdout).toContain("from-start");
     });
@@ -2173,12 +2175,12 @@ describe("CLI", () => {
         path.join(tmpDir, "labelhost.json"),
         JSON.stringify({ name: "config-name" })
       );
-      // With PORTLESS=0, the name doesn't matter (command runs directly)
+      // With LABELHOST=0, the name doesn't matter (command runs directly)
       // but we can verify via the run subcommand help text or named mode.
       // Let's test it goes through without error.
       const { stdout } = run(["--name", "override-name", "echo", "works"], {
         cwd: tmpDir,
-        env: { PORTLESS: "0" },
+        env: { LABELHOST: "0" },
       });
       expect(stdout).toContain("works");
     });

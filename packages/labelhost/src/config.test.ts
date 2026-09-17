@@ -14,6 +14,14 @@ import {
   loadPackageLabelhostConfig,
   ConfigValidationError,
 } from "./config.js";
+import { evaluatePklFile, PklEvaluationError } from "./pkl.js";
+
+vi.mock("./pkl.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./pkl.js")>();
+  return { ...actual, evaluatePklFile: vi.fn() };
+});
+
+const evaluatePklFileMock = vi.mocked(evaluatePklFile);
 
 function createTmpDir(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), "labelhost-config-test-"));
@@ -93,6 +101,7 @@ describe("loadConfig", () => {
 
   beforeEach(() => {
     tmpDir = createTmpDir();
+    evaluatePklFileMock.mockReset();
   });
 
   afterEach(() => {
@@ -109,6 +118,51 @@ describe("loadConfig", () => {
     expect(result).not.toBeNull();
     expect(result!.config.name).toBe("myapp");
     expect(result!.configDir).toBe(tmpDir);
+  });
+
+  it("loads labelhost.pkl by evaluating it through the pkl CLI", () => {
+    const pklPath = path.join(tmpDir, "labelhost.pkl");
+    fs.writeFileSync(pklPath, 'amends "Labelhost.pkl"\nname = "myapp"\n');
+    evaluatePklFileMock.mockReturnValue({ name: "myapp" });
+
+    const result = loadConfig(tmpDir);
+
+    expect(evaluatePklFileMock).toHaveBeenCalledWith(pklPath);
+    expect(result!.config.name).toBe("myapp");
+    expect(result!.configDir).toBe(tmpDir);
+  });
+
+  it("prefers labelhost.pkl over labelhost.json", () => {
+    fs.writeFileSync(path.join(tmpDir, "labelhost.pkl"), 'name = "frompkl"');
+    fs.writeFileSync(path.join(tmpDir, "labelhost.json"), JSON.stringify({ name: "fromjson" }));
+    evaluatePklFileMock.mockReturnValue({ name: "frompkl" });
+
+    expect(loadConfig(tmpDir)!.config.name).toBe("frompkl");
+  });
+
+  it("does not invoke pkl when no labelhost.pkl exists", () => {
+    fs.writeFileSync(path.join(tmpDir, "labelhost.json"), JSON.stringify({ name: "myapp" }));
+
+    expect(loadConfig(tmpDir)!.config.name).toBe("myapp");
+    expect(evaluatePklFileMock).not.toHaveBeenCalled();
+  });
+
+  it("validates the result of a pkl evaluation like any other config", () => {
+    fs.writeFileSync(path.join(tmpDir, "labelhost.pkl"), "appPort = 99999");
+    evaluatePklFileMock.mockReturnValue({ appPort: 99999 });
+
+    expect(() => loadConfig(tmpDir)).toThrow(ConfigValidationError);
+  });
+
+  it("surfaces a pkl evaluation failure instead of falling through", () => {
+    fs.writeFileSync(path.join(tmpDir, "labelhost.pkl"), 'nmae = "typo"');
+    fs.writeFileSync(path.join(tmpDir, "labelhost.json"), JSON.stringify({ name: "fallback" }));
+    evaluatePklFileMock.mockImplementation(() => {
+      throw new PklEvaluationError("Cannot find property `nmae`");
+    });
+
+    expect(() => loadConfig(tmpDir)).toThrow(ConfigValidationError);
+    expect(() => loadConfig(tmpDir)).toThrow(/Cannot find property `nmae`/);
   });
 
   it("falls back to portless.json for upstream-configured projects", () => {

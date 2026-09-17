@@ -48,7 +48,7 @@ Bare `labelhost` works out of the box. It runs the `"dev"` script from `package.
 labelhost        # -> runs "dev" script, https://<project>.localhost
 ```
 
-Use an optional `labelhost.json` to override defaults:
+Use an optional `labelhost.json` to override defaults (config is read from `labelhost.pkl`, then `labelhost.json`, then `portless.json`, then a `"labelhost"` or `"portless"` key in `package.json`):
 
 ```json
 { "name": "myapp" }
@@ -98,6 +98,44 @@ Without an `apps` map, hostnames follow the `<package>.<project>.localhost` conv
 | `turbo`            | boolean | `true`   | Set `false` to use direct spawning instead of turborepo.  |
 
 `hostnameTemplate` is evaluated before labelhost adds the proxy TLD. `{{name}}` is the configured or inferred app name and `{{worktree}}` is the linked-worktree branch prefix. If there is no worktree prefix, its complete dot-delimited label is removed. For example, `{{worktree}}.{{name}}.dev` resolves to `myapp.dev.localhost` in the primary checkout and `feature-auth.myapp.dev.localhost` in a linked worktree.
+
+### Pkl config
+
+Instead of JSON, config can be written in [Pkl](https://pkl-lang.org). Put a
+`labelhost.pkl` next to your `package.json` and amend the shipped schema:
+
+```pkl
+amends "https://raw.githubusercontent.com/WataruNishimura/portless/main/packages/labelhost/pkl/Labelhost.pkl"
+
+name = "myapp"
+hostnameTemplate = "{{worktree}}.{{name}}.dev"
+
+apps {
+  ["apps/web"] { appPort = 3000 }
+  ["apps/api"] { name = "api.myapp"; proxy = false }
+}
+```
+
+Amending the schema is what makes this worth it: a misspelled property or an
+out-of-range port fails at evaluation time, pointing at the offending line,
+instead of being silently ignored the way an unknown JSON key is.
+
+```
+–– Pkl Error ––
+Cannot find property `hostnmae` in module `Labelhost`.
+
+2 | hostnmae = "typo"
+    ^^^^^^^^
+```
+
+When the package is installed locally you can amend
+`node_modules/labelhost/pkl/Labelhost.pkl` instead of fetching over HTTP.
+
+This requires the [pkl CLI](https://pkl-lang.org/main/current/pkl-cli/index.html)
+on `PATH`; set `LABELHOST_PKL_BIN` to point at it elsewhere. Only projects with
+a `labelhost.pkl` need it. If a `labelhost.pkl` is present but cannot be
+evaluated, labelhost reports the error rather than falling back to JSON, so a
+broken config never starts an app under the wrong hostname.
 
 ### package.json "labelhost" key
 
@@ -395,7 +433,7 @@ labelhost hosts sync              # Add routes to /etc/hosts (fixes Safari)
 labelhost hosts clean             # Remove labelhost entries from /etc/hosts
 
 # Disable labelhost (run command directly)
-PORTLESS=0 pnpm dev              # Bypasses proxy, uses default port
+LABELHOST=0 pnpm dev              # Bypasses proxy, uses default port
 
 # Proxy control
 labelhost proxy start             # Start the HTTPS proxy (port 443, daemon)

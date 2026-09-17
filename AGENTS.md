@@ -20,7 +20,7 @@ Never use `--` as a dash in prose, comments, or user-facing output. Use an em da
 
 ## Boolean Environment Variables
 
-Document boolean env vars using only `0` and `1` in CLI help, SKILL.md, docs pages, and README. Code accepts `true`/`false` as well (and `skip` for `PORTLESS`), but these alternatives are not documented.
+Document boolean env vars using only `0` and `1` in CLI help, SKILL.md, docs pages, and README. Code accepts `true`/`false` as well (and `skip` for `LABELHOST`), but these alternatives are not documented.
 
 ## Docs Updates
 

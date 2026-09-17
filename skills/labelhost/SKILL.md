@@ -152,10 +152,10 @@ No config changes needed. Put `labelhost run` in `package.json` once and it work
 
 ### Bypassing labelhost
 
-Set `PORTLESS=0` to run the command directly without the proxy:
+Set `LABELHOST=0` to run the command directly without the proxy:
 
 ```bash
-PORTLESS=0 pnpm dev   # Bypasses proxy, uses default port
+LABELHOST=0 pnpm dev   # Bypasses proxy, uses default port
 ```
 
 ## How It Works
@@ -194,7 +194,7 @@ Labelhost stores its state (routes, PID file, port file) in `~/.labelhost`. When
 | `LABELHOST_FUNNEL`     | Set to `1` to share apps publicly via Tailscale Funnel (same as `--funnel`)    |
 | `LABELHOST_NGROK`      | Set to `1` to share apps publicly via ngrok (same as `--ngrok`)                |
 | `LABELHOST_STATE_DIR`  | Override the state directory                                                   |
-| `PORTLESS=0`           | Bypass the proxy, run the command directly                                     |
+| `LABELHOST=0`          | Bypass the proxy, run the command directly                                     |
 
 ### HTTP/2 + HTTPS
 
@@ -348,6 +348,35 @@ Optional config file. Labelhost looks for it in the current directory.
 Each `apps` entry has the same shape (`name`, `hostnameTemplate`, `script`, `appPort`, `proxy`). When `apps` is present, top-level fields apply only in single-app mode.
 
 `hostnameTemplate` is evaluated before labelhost adds the proxy TLD. `{{name}}` is the configured or inferred app name and `{{worktree}}` is the linked-worktree branch prefix. If there is no worktree prefix, its complete dot-delimited label is removed. For example, `{{worktree}}.{{name}}.dev` resolves to `myapp.dev.localhost` in the primary checkout and `feature-auth.myapp.dev.localhost` in a linked worktree.
+
+### Pkl config
+
+Config can be written in [Pkl](https://pkl-lang.org) instead of JSON. Put a
+`labelhost.pkl` next to your `package.json` and amend the shipped schema:
+
+```pkl
+amends "https://raw.githubusercontent.com/WataruNishimura/portless/main/packages/labelhost/pkl/Labelhost.pkl"
+
+name = "myapp"
+hostnameTemplate = "{{worktree}}.{{name}}.dev"
+
+apps {
+  ["apps/web"] { appPort = 3000 }
+  ["apps/api"] { name = "api.myapp"; proxy = false }
+}
+```
+
+Amending the schema is the point: a misspelled property or an out-of-range
+port fails at evaluation time, pointing at the offending line, instead of
+being silently ignored the way an unknown JSON key is. When the package is
+installed locally, amend `node_modules/labelhost/pkl/Labelhost.pkl` to avoid
+fetching over HTTP.
+
+This requires the [pkl CLI](https://pkl-lang.org/main/current/pkl-cli/index.html)
+on `PATH`, or `LABELHOST_PKL_BIN` pointing at it. Only projects with a
+`labelhost.pkl` need it. A `labelhost.pkl` that fails to evaluate is reported
+as an error rather than skipped, so a broken config never starts an app under
+the wrong hostname.
 
 ### package.json "labelhost" key
 

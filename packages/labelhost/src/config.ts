@@ -1,6 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { isValidHostnameTemplate } from "./hostname-template.js";
+import { evaluatePklFile, PklEvaluationError } from "./pkl.js";
 
 export class ConfigValidationError extends Error {
   constructor(message: string) {
@@ -28,10 +29,10 @@ export interface LoadedConfig {
 }
 
 /**
- * Config filenames in priority order. `labelhost.json` is still read so a
+ * Config filenames in priority order. `portless.json` is still read so a
  * project already set up for upstream portless works unchanged.
  */
-const CONFIG_FILENAMES = ["labelhost.json", "portless.json"] as const;
+const CONFIG_FILENAMES = ["labelhost.pkl", "labelhost.json", "portless.json"] as const;
 
 /**
  * package.json config keys in priority order, mirroring CONFIG_FILENAMES.
@@ -39,27 +40,56 @@ const CONFIG_FILENAMES = ["labelhost.json", "portless.json"] as const;
 const PACKAGE_KEYS = ["labelhost", "portless"] as const;
 
 /**
- * Load labelhost config from `cwd`. Checks `labelhost.json`, then
- * `portless.json`, then falls back to a `"labelhost"` or `"portless"` key
- * in `package.json`. Does not walk up to parent directories.
+ * Load labelhost config from `cwd`. Checks `labelhost.pkl`, then
+ * `labelhost.json`, then `portless.json`, then falls back to a `"labelhost"`
+ * or `"portless"` key in `package.json`. Does not walk up to parent
+ * directories.
  */
 export function loadConfig(cwd: string = process.cwd()): LoadedConfig | null {
   for (const filename of CONFIG_FILENAMES) {
     const configPath = path.join(cwd, filename);
-    try {
-      const raw = fs.readFileSync(configPath, "utf-8");
-      const parsed = JSON.parse(raw);
-      validateConfig(parsed, configPath);
-      return { config: parsed, configDir: cwd };
-    } catch (err) {
-      if (isErrnoException(err) && err.code === "ENOENT") continue;
-      if (err instanceof SyntaxError) {
-        throw new ConfigValidationError(`Invalid JSON in ${configPath}`);
-      }
-      throw err;
-    }
+    const parsed = filename.endsWith(".pkl")
+      ? readPklConfig(configPath)
+      : readJsonConfig(configPath);
+    if (parsed === undefined) continue;
+    validateConfig(parsed, configPath);
+    return { config: parsed, configDir: cwd };
   }
   return loadConfigFromPackageJson(cwd);
+}
+
+/** Read a JSON config file, or undefined when it does not exist. */
+function readJsonConfig(configPath: string): unknown {
+  let raw: string;
+  try {
+    raw = fs.readFileSync(configPath, "utf-8");
+  } catch (err) {
+    if (isErrnoException(err) && err.code === "ENOENT") return undefined;
+    throw err;
+  }
+  try {
+    return JSON.parse(raw);
+  } catch {
+    throw new ConfigValidationError(`Invalid JSON in ${configPath}`);
+  }
+}
+
+/**
+ * Evaluate a Pkl config file, or undefined when it does not exist. A missing
+ * pkl CLI is reported as a config error rather than ignored: the file is
+ * plainly meant to be the config, so silently falling through to a lower
+ * priority source would start the app under the wrong hostname.
+ */
+function readPklConfig(configPath: string): unknown {
+  if (!fs.existsSync(configPath)) return undefined;
+  try {
+    return evaluatePklFile(configPath);
+  } catch (err) {
+    if (err instanceof PklEvaluationError) {
+      throw new ConfigValidationError(err.message);
+    }
+    throw err;
+  }
 }
 
 /** Normalize the raw config value: a string is shorthand for `{ name }`. */
