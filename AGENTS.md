@@ -47,6 +47,16 @@ To prepare a release:
 
 CI compares the version in `packages/labelhost/package.json` to what's on npm. If it differs, it builds, publishes, and creates the GitHub release automatically. The release body is extracted from the content between the markers.
 
+### Publish routes
+
+There are two interchangeable routes to npm.
+
+**Workflow route (default).** Merging the release PR to main runs `.github/workflows/release.yml`, which publishes with provenance. It authenticates with the `NPM_TOKEN` secret when that secret is set on the `Release` environment, and otherwise falls back to npm trusted publishing over OIDC. Configure one of the two, or the publish step has no credentials.
+
+**Manual route.** `pnpm release:manual` runs `scripts/publish.sh`, which publishes from a local machine. Use it when the workflow cannot authenticate, most notably for the first publish of a new package name, since npm trusted publishing can only be configured on a package that already exists. The script refuses a dirty tree, a version already on npm, and a changelog with no release markers, then runs the same checks CI would before publishing.
+
+The two routes do not conflict. `check-release` skips publishing when the local version already matches npm, so a manual publish followed by a merge to main still creates the GitHub release. A manually published version carries no provenance, because npm only attests builds that ran in a supported CI environment, so prefer the workflow route once it authenticates.
+
 ## Windows Debugging
 
 A remote Windows Server 2022 EC2 instance is available for debugging Windows-specific issues. It uses AWS Systems Manager (SSM) with no SSH or open ports. Commands run via `aws ssm send-command` and return stdout/stderr.

@@ -19,6 +19,7 @@
     "test:coverage": "turbo test:coverage",
     "test:watch": "turbo test:watch",
     "type-check": "turbo type-check",
+    "release:manual": "./scripts/publish.sh",
     "prepare": "husky"
   },
   "devDependencies": {

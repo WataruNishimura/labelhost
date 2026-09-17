@@ -94,8 +94,21 @@ jobs:
         run: pnpm build
 
       - name: Publish to npm
-        run: npm publish --provenance
         working-directory: packages/labelhost
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          # Pick the auth mode explicitly. actions/setup-node wrote an
+          # _authToken line templated on NODE_AUTH_TOKEN, which this job never
+          # sets, so leaving it in place makes npm resolve an undefined env var.
+          if [ -n "$NPM_TOKEN" ]; then
+            echo "Authenticating with the NPM_TOKEN secret"
+            npm config set "//registry.npmjs.org/:_authToken=$NPM_TOKEN"
+          else
+            echo "No NPM_TOKEN secret, using trusted publishing (OIDC)"
+            npm config delete "//registry.npmjs.org/:_authToken" || true
+          fi
+          npm publish --provenance
 
   github-release:
     name: Create GitHub Release
