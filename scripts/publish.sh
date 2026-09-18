@@ -2,14 +2,19 @@
 #
 # Manual npm publish route.
 #
-# The normal route is .github/workflows/release.yml, which publishes on merge to
-# main. Use this script when the workflow cannot authenticate: the first publish
-# of a new package name (npm trusted publishing can only be configured on a
-# package that already exists), or a registry outage on the runner.
+# The normal route is .github/workflows/release.yml, which stages on merge to
+# main and waits for a maintainer to approve with 2FA. Use this script when that
+# route cannot run: the first publish of a new package name, which neither
+# trusted publishing nor staging can bootstrap since both require the package to
+# already exist, or a registry outage on the runner.
+#
+# This script publishes directly rather than staging. It runs under your own
+# session token, so the trust relationship's permissions do not apply and npm
+# prompts for 2FA itself, which is the same proof-of-presence staging defers.
 #
 # Both routes are interchangeable. release.yml compares the local version to npm
-# and skips publishing when they already match, so a manual publish followed by a
-# merge to main still gets its GitHub release created automatically.
+# and stages nothing when they already match, so a manual publish followed by a
+# merge to main still gets its GitHub release created.
 #
 # Provenance is not generated here. npm can only attest a build that ran in a
 # supported CI environment, so a manually published version carries no
@@ -70,8 +75,7 @@ npm publish
 echo
 echo "Published $NAME@$VERSION."
 echo
-echo "Next: merge to main so release.yml creates the v$VERSION GitHub release,"
-echo "or dispatch the Release workflow manually if the version is already on main."
-echo "Then configure npm trusted publishing so the workflow route can take over:"
-echo "  npmjs.com -> $NAME -> Settings -> Trusted Publisher"
-echo "  repository WataruNishimura/labelhost, workflow release.yml, environment Release"
+echo "It is live on npm now: publishing directly skips the staging approval."
+echo
+echo "Next: merge to main, or dispatch the Release workflow if the version is"
+echo "already there, so release.yml creates the v$VERSION GitHub release."

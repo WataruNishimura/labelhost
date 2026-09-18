@@ -8,6 +8,10 @@ on:
 
 concurrency: ${{ github.workflow }}-${{ github.ref }}
 
+env:
+  PACKAGE_NAME: "@_n13u_/labelhost"
+  PACKAGE_JSON: packages/labelhost/package.json
+
 jobs:
   check-release:
     name: Check for new version
@@ -16,52 +20,84 @@ jobs:
     permissions:
       contents: read
     outputs:
-      should_release: ${{ steps.check.outputs.should_release }}
+      should_stage: ${{ steps.check.outputs.should_stage }}
       needs_github_release: ${{ steps.check.outputs.needs_github_release }}
       version: ${{ steps.check.outputs.version }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          # HEAD^ is read below to tell a release commit from any other push.
+          fetch-depth: 2
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version-file: .node-version
 
-      - name: Compare package.json version to npm and check GitHub release
+      - name: Decide whether to stage and whether a release is due
         id: check
         run: |
-          LOCAL_VERSION=$(node -p "require('./packages/labelhost/package.json').version")
+          LOCAL_VERSION=$(node -p "require('./$PACKAGE_JSON').version")
           echo "Local version: $LOCAL_VERSION"
 
-          NPM_VERSION=$(npm view @_n13u_/labelhost version 2>/dev/null || echo "0.0.0")
+          NPM_VERSION=$(npm view "$PACKAGE_NAME" version 2>/dev/null || echo "0.0.0")
           echo "npm version: $NPM_VERSION"
 
-          if [ "$LOCAL_VERSION" != "$NPM_VERSION" ]; then
-            echo "Version changed: $NPM_VERSION -> $LOCAL_VERSION"
-            echo "should_release=true" >> "$GITHUB_OUTPUT"
-            echo "needs_github_release=true" >> "$GITHUB_OUTPUT"
+          # A staged version is not public, so npm never reports it and this job
+          # cannot ask: a trust relationship's shortlived token is allowed to run
+          # npm stage publish but no other npm stage subcommand, so npm stage list
+          # is unavailable here. Staging the same version twice is an error, and
+          # every unrelated push to main would retry it while an approval is
+          # pending. Stage only on the commit that actually bumps the version,
+          # which is the release commit, and let a manual dispatch force a retry.
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION_BUMPED=true
+            echo "Dispatched manually, treating this as an explicit release attempt"
           else
-            echo "Version unchanged on npm, skipping publish"
-            echo "should_release=false" >> "$GITHUB_OUTPUT"
+            PREV_VERSION=$(git show "HEAD^:$PACKAGE_JSON" 2>/dev/null \
+              | node -p "try { JSON.parse(require('fs').readFileSync(0, 'utf8')).version } catch { '' }" \
+              || echo "")
+            echo "Version at HEAD^: ${PREV_VERSION:-unknown}"
+            if [ "$PREV_VERSION" = "$LOCAL_VERSION" ]; then
+              VERSION_BUMPED=false
+            else
+              VERSION_BUMPED=true
+            fi
+          fi
 
+          if [ "$LOCAL_VERSION" != "$NPM_VERSION" ] && [ "$VERSION_BUMPED" = "true" ]; then
+            echo "Version changed: $NPM_VERSION -> $LOCAL_VERSION, will stage"
+            echo "should_stage=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Nothing to stage"
+            echo "should_stage=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          # The GitHub release announces a version people can install, so it
+          # waits until the staged package has been approved and npm serves it.
+          if [ "$LOCAL_VERSION" = "$NPM_VERSION" ]; then
             TAG="v$LOCAL_VERSION"
             if gh release view "$TAG" &>/dev/null; then
               echo "GitHub release $TAG exists"
               echo "needs_github_release=false" >> "$GITHUB_OUTPUT"
             else
-              echo "GitHub release $TAG is missing, will create it"
+              echo "$LOCAL_VERSION is live on npm and $TAG is missing, will create it"
               echo "needs_github_release=true" >> "$GITHUB_OUTPUT"
             fi
+          else
+            echo "$LOCAL_VERSION is not live on npm yet, holding the GitHub release"
+            echo "needs_github_release=false" >> "$GITHUB_OUTPUT"
           fi
+
           echo "version=$LOCAL_VERSION" >> "$GITHUB_OUTPUT"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  publish:
-    name: Publish to npm
+  stage:
+    name: Stage for publishing
     needs: check-release
-    if: needs.check-release.outputs.should_release == 'true'
+    if: needs.check-release.outputs.should_stage == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment: Release
@@ -72,15 +108,10 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version-file: .node-version
-
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
 
-      - name: Setup Node.js cache
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version-file: .node-version
@@ -93,7 +124,7 @@ jobs:
       - name: Build
         run: pnpm build
 
-      - name: Publish to npm
+      - name: Stage the package
         working-directory: packages/labelhost
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
@@ -108,15 +139,39 @@ jobs:
             echo "No NPM_TOKEN secret, using trusted publishing (OIDC)"
             npm config delete "//registry.npmjs.org/:_authToken" || true
           fi
-          npm publish --provenance
+          # Staging never prompts for 2FA, which is what lets it run here. The
+          # package is uploaded but stays non-public until a maintainer approves
+          # it with 2FA. Flags are the same as npm publish, provenance included.
+          npm stage publish --provenance
+
+      - name: Explain the approval step
+        env:
+          VERSION: ${{ needs.check-release.outputs.version }}
+        run: |
+          {
+            echo "## Staged $PACKAGE_NAME@$VERSION"
+            echo
+            echo "It is **not** on npm yet. Staging defers proof-of-presence, so a"
+            echo "maintainer has to approve it with 2FA before anyone can install it."
+            echo
+            echo "Approve it from the Staged Packages tab on npmjs.com, or run:"
+            echo
+            echo '```'
+            echo "npm stage list"
+            echo "npm stage approve <stage-id>"
+            echo '```'
+            echo
+            echo "Then run this workflow again from Actions to create the v$VERSION"
+            echo "GitHub release, which is held back until npm serves the version."
+          } >> "$GITHUB_STEP_SUMMARY"
 
   github-release:
     name: Create GitHub Release
-    needs: [check-release, publish]
+    needs: [check-release, stage]
     if: >-
       always()
       && needs.check-release.outputs.needs_github_release == 'true'
-      && (needs.publish.result == 'success' || needs.publish.result == 'skipped')
+      && (needs.stage.result == 'success' || needs.stage.result == 'skipped')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
