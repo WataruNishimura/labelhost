@@ -1,5 +1,7 @@
 # Changelog
 
+labelhost is a fork of [portless](https://github.com/vercel-labs/portless) by Vercel Labs. Versions from 1.0.0 are this fork's own. Entries from 0.15.5 downward are inherited from the upstream changelog and describe portless releases; pull request numbers in those entries refer to the upstream repository.
+
 ## 1.0.0
 
 <!-- release:start -->

@@ -7,6 +7,8 @@ description: Set up and use labelhost for named local dev server URLs (e.g. http
 
 Replace port numbers with stable, named .localhost URLs. For humans and agents.
 
+Labelhost is a fork of [portless](https://github.com/vercel-labs/portless) by Vercel Labs. The CLI, npm package (`@_n13u_/labelhost`), state directory (`~/.labelhost`), and environment variables (`LABELHOST_*`) are renamed so it can run alongside portless, and it adds the `hostnameTemplate` config field and Pkl config. Upstream portless documentation mostly applies; substitute `labelhost` for `portless` and `LABELHOST_` for `PORTLESS_`. `portless.json` and a `"portless"` key in `package.json` are still read, but `PORTLESS_*` environment variables are not.
+
 ## Why labelhost
 
 - **Port conflicts**: `EADDRINUSE` when two projects default to the same port
@@ -333,7 +335,7 @@ The chosen service configuration is written into launchd, systemd, or Task Sched
 
 ## labelhost.json
 
-Optional config file. Labelhost looks for it in the current directory.
+Optional config file. Labelhost looks for it in the current directory. Lookup order: `labelhost.pkl`, `labelhost.json`, `portless.json`, then a `"labelhost"` or `"portless"` key in `package.json`. The `portless` names exist for compatibility with upstream portless projects.
 
 | Field              | Type    | Default                    | Description                                              |
 | ------------------ | ------- | -------------------------- | -------------------------------------------------------- |

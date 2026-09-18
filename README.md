@@ -7,6 +7,21 @@ Replace port numbers with stable, named .localhost URLs for local development. F
 + "dev": "labelhost run next dev"     # https://myapp.localhost
 ```
 
+## About this fork
+
+labelhost is a fork of [portless](https://github.com/vercel-labs/portless) by Vercel Labs, maintained by [Wataru Nishimura](https://github.com/WataruNishimura). It is not affiliated with, endorsed by, or supported by Vercel.
+
+The fork tracks upstream `main` and merges it periodically, so bug fixes and features from portless land here too. Versions are the fork's own and do not track upstream's; numbering restarted at 1.0.0. On top of upstream, labelhost changes the following:
+
+- **Renamed CLI, package, and state.** The npm package is `@_n13u_/labelhost` and installs a `labelhost` command, per-user state lives in `~/.labelhost`, environment variables use the `LABELHOST_*` prefix, and the local CA (`labelhost Local CA`), launchd label (`dev.labelhost.proxy`), and systemd unit (`labelhost.service`) carry the new name. This lets labelhost be installed and run alongside upstream portless without colliding.
+- **`hostnameTemplate` config field.** A per-app hostname pattern with `{{name}}` and `{{worktree}}` placeholders. See [Config fields](#config-fields).
+- **Pkl config.** Config can be written in `labelhost.pkl`, amending a shipped schema so a misspelled property or an out-of-range value fails at evaluation time. See [Pkl config](#pkl-config).
+- **Upstream config compatibility.** `portless.json` and a `"portless"` key in `package.json` are still read, so a project already set up for portless works without changes. `PORTLESS_*` environment variables are not read; use `LABELHOST_*` instead.
+
+Report fork-specific issues in [this repository](https://github.com/WataruNishimura/labelhost/issues). An issue that also reproduces with upstream portless is best reported [upstream](https://github.com/vercel-labs/portless/issues).
+
+labelhost is licensed under the Apache License 2.0, the same license as portless. See [LICENSE](LICENSE) and [NOTICE](NOTICE) for attribution details.
+
 ## Install
 
 **Global (recommended):**
@@ -579,6 +594,18 @@ pnpm lint             # Lint all packages
 pnpm type-check       # Type-check all packages
 pnpm format           # Format all files with Prettier
 ```
+
+### Syncing with upstream
+
+Upstream portless is kept as a second git remote and its `main` branch is merged in periodically:
+
+```bash
+git remote add upstream https://github.com/vercel-labs/portless.git   # once
+git fetch upstream
+git merge upstream/main
+```
+
+Fork-specific changes are kept small and listed in [NOTICE](NOTICE) so those merges stay manageable. When resolving conflicts, prefer the upstream side for anything that is not part of the rename, `hostnameTemplate`, or Pkl support.
 
 ## Requirements
 
