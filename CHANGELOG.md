@@ -1,5 +1,15 @@
 # Changelog
 
+labelhost is a fork of [portless](https://github.com/vercel-labs/portless) by Vercel Labs. Entries from 0.15.5 downward are inherited from the upstream changelog and describe portless releases; pull request numbers in those entries refer to the upstream repository. Fork-specific changes are listed above them.
+
+## Unreleased
+
+### Fork Changes
+
+- **Renamed to labelhost**: The CLI command, npm package, state directory (`~/.labelhost`), environment variable prefix (`LABELHOST_*`), local CA name, launchd label, and systemd unit are renamed so the fork can be installed and run alongside upstream portless. `portless.json` and a `"portless"` key in `package.json` are still read for compatibility.
+- **`hostnameTemplate` config field**: Per-app hostname pattern with `{{name}}` and `{{worktree}}` placeholders, evaluated before the proxy TLD is appended.
+- **Pkl config**: `labelhost.pkl` is read ahead of `labelhost.json`, amending the `pkl/Labelhost.pkl` schema shipped in the package so a misspelled property or an out-of-range value fails at evaluation time.
+
 ## 0.15.5
 
 <!-- release:start -->
