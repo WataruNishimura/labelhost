@@ -8,7 +8,7 @@ First release of labelhost, a fork of [Vercel Labs' portless](https://github.com
 
 ### Breaking Changes
 
-- **Renamed from portless**: The CLI, npm package, and every machine-global identifier are renamed so this fork installs and runs alongside upstream portless without colliding. The state directory moves to `~/.labelhost`, the launchd label to `dev.labelhost.proxy`, the systemd unit to `labelhost.service`, and the local CA to "labelhost Local CA" in `labelhost-ca.crt`. Environment variables use the `LABELHOST_` prefix, and the bypass switch is `LABELHOST`. Upstream's `PORTLESS_*` variables are not read; a machine already running upstream portless needs its CA trusted and its service installed again under the new names.
+- **Renamed from portless**: The CLI, npm package, and every machine-global identifier are renamed so this fork installs and runs alongside upstream portless without colliding. The package publishes as `@n13u/labelhost` under a scope rather than claiming the bare `labelhost` name on npm, and installs a `labelhost` command. The state directory moves to `~/.labelhost`, the launchd label to `dev.labelhost.proxy`, the systemd unit to `labelhost.service`, and the local CA to "labelhost Local CA" in `labelhost-ca.crt`. Environment variables use the `LABELHOST_` prefix, and the bypass switch is `LABELHOST`. Upstream's `PORTLESS_*` variables are not read; a machine already running upstream portless needs its CA trusted and its service installed again under the new names.
 
 ### Features
 

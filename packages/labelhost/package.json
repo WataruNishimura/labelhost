@@ -1,5 +1,5 @@
 {
-  "name": "labelhost",
+  "name": "@n13u/labelhost",
   "version": "1.0.0",
   "description": "Replace port numbers with stable, named .localhost URLs. For humans and agents. A fork of Vercel Labs' portless.",
   "type": "module",

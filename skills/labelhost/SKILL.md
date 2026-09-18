@@ -25,10 +25,10 @@ Install globally (recommended) or as a project dev dependency. Do NOT use `npx` 
 
 ```bash
 # Global (available everywhere)
-npm install -g labelhost
+npm install -g @n13u/labelhost
 
 # Or per-project dev dependency
-npm install -D labelhost
+npm install -D @n13u/labelhost
 ```
 
 When installed per-project, invoke via package.json scripts or `npx labelhost` (since the package is local, npx will not download anything).
@@ -37,7 +37,7 @@ When installed per-project, invoke via package.json scripts or `npx labelhost` (
 
 ```bash
 # Install globally (or add -D to a project)
-npm install -g labelhost
+npm install -g @n13u/labelhost
 
 # Run your app (auto-starts the HTTPS proxy on port 443)
 labelhost run next dev

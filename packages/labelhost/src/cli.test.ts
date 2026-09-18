@@ -2433,3 +2433,65 @@ describe("CLI", () => {
     );
   });
 });
+
+describe("npx guard", () => {
+  // run() strips npm_command, so spawn directly to simulate a package runner.
+  function runAsNpx(cwd: string) {
+    const env: Record<string, string | undefined> = {
+      ...process.env,
+      NO_COLOR: "1",
+      npm_command: "exec",
+    };
+    delete env.npm_lifecycle_event;
+    delete env.PNPM_SCRIPT_SRC_DIR;
+    return spawnSync(process.execPath, [CLI_PATH, "--help"], {
+      encoding: "utf-8",
+      timeout: 10_000,
+      env,
+      cwd,
+    });
+  }
+
+  function withNodeModules(pkg: string | null): string {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "labelhost-npx-guard-"));
+    if (pkg) {
+      const pkgDir = path.join(dir, "node_modules", ...pkg.split("/"));
+      fs.mkdirSync(pkgDir, { recursive: true });
+      fs.writeFileSync(path.join(pkgDir, "package.json"), JSON.stringify({ name: pkg }));
+    }
+    return dir;
+  }
+
+  it("blocks a one-off npx download", () => {
+    const dir = withNodeModules(null);
+    try {
+      const result = runAsNpx(dir);
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain("should not be run via npx");
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("allows npx when the scoped package is installed locally", () => {
+    const dir = withNodeModules("@n13u/labelhost");
+    try {
+      const result = runAsNpx(dir);
+      expect(result.status).toBe(0);
+      expect(result.stderr).not.toContain("should not be run via npx");
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("allows npx when an unscoped pre-scope install is present", () => {
+    const dir = withNodeModules("labelhost");
+    try {
+      const result = runAsNpx(dir);
+      expect(result.status).toBe(0);
+      expect(result.stderr).not.toContain("should not be run via npx");
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});

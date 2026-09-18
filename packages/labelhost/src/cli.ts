@@ -388,8 +388,10 @@ function getEntryScript(): string {
 
 /**
  * Check whether labelhost is installed as a project dependency by walking
- * up from cwd looking for node_modules/labelhost. Used to distinguish a
- * local `npx labelhost` (allowed) from a one-off download (blocked).
+ * up from cwd looking for node_modules/@n13u/labelhost, or the unscoped
+ * node_modules/labelhost left by an install from before the package was
+ * scoped. Used to distinguish a local `npx labelhost` (allowed) from a
+ * one-off download (blocked).
  */
 /**
  * Whether a workspace package's dev script invokes this CLI itself, so the
@@ -403,8 +405,11 @@ function isSelfCommand(command: string | undefined): boolean {
 function isLocallyInstalled(): boolean {
   let dir = process.cwd();
   for (;;) {
-    if (fs.existsSync(path.join(dir, "node_modules", "labelhost", "package.json"))) {
-      return true;
+    const nodeModules = path.join(dir, "node_modules");
+    for (const pkg of ["@n13u/labelhost", "labelhost"]) {
+      if (fs.existsSync(path.join(nodeModules, pkg, "package.json"))) {
+        return true;
+      }
     }
     const parent = path.dirname(dir);
     if (parent === dir) break;
@@ -1765,8 +1770,8 @@ Eliminates port conflicts, memorizing port numbers, and cookie/storage
 clashes by giving each dev server a stable .localhost URL.
 
 ${colors.bold("Install:")}
-  ${colors.cyan("npm install -g labelhost")}          Global (recommended)
-  ${colors.cyan("npm install -D labelhost")}          Project dev dependency
+  ${colors.cyan("npm install -g @n13u/labelhost")}    Global (recommended)
+  ${colors.cyan("npm install -D @n13u/labelhost")}    Project dev dependency
 
 ${colors.bold("Requirements:")}
   Node.js 24+
@@ -4207,8 +4212,8 @@ async function main() {
   if ((isNpx || isPnpmDlx) && !isLocallyInstalled()) {
     console.error(colors.red("Error: labelhost should not be run via npx or pnpm dlx."));
     console.error(colors.blue("Install globally or as a project dependency:"));
-    console.error(colors.cyan("  npm install -g labelhost"));
-    console.error(colors.cyan("  npm install -D labelhost"));
+    console.error(colors.cyan("  npm install -g @n13u/labelhost"));
+    console.error(colors.cyan("  npm install -D @n13u/labelhost"));
     process.exit(1);
   }
 
