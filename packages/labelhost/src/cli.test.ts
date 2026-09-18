@@ -2437,13 +2437,19 @@ describe("CLI", () => {
 describe("npx guard", () => {
   // run() strips npm_command, so spawn directly to simulate a package runner.
   function runAsNpx(cwd: string) {
-    const env: Record<string, string | undefined> = {
-      ...process.env,
-      NO_COLOR: "1",
-      npm_command: "exec",
-    };
-    delete env.npm_lifecycle_event;
-    delete env.PNPM_SCRIPT_SRC_DIR;
+    const env: Record<string, string | undefined> = { ...process.env, NO_COLOR: "1" };
+    // The CLI only treats itself as a package runner when no lifecycle event is
+    // set, so the parent's has to go. Windows keeps an environment variable
+    // under whatever case it was created with, and spreading process.env copies
+    // those keys verbatim, so deleting a fixed spelling can leave the parent's
+    // value behind and the guard would never fire.
+    const drop = new Set(["npm_lifecycle_event", "pnpm_script_src_dir", "npm_command"]);
+    for (const key of Object.keys(env)) {
+      if (drop.has(key.toLowerCase())) {
+        delete env[key];
+      }
+    }
+    env.npm_command = "exec";
     return spawnSync(process.execPath, [CLI_PATH, "--help"], {
       encoding: "utf-8",
       timeout: 10_000,
