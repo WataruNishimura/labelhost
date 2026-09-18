@@ -1,6 +1,6 @@
 {
-  "name": "labelhost",
-  "version": "0.15.5",
+  "name": "@_n13u_/labelhost",
+  "version": "1.0.0",
   "description": "Replace port numbers with stable, named .localhost URLs. For humans and agents. A fork of Vercel Labs' portless.",
   "type": "module",
   "main": "./dist/index.js",
@@ -40,20 +40,27 @@
     "type-check": "tsc --noEmit"
   },
   "keywords": [
+    "labelhost",
     "local",
     "development",
     "proxy",
-    "localhost"
+    "localhost",
+    "https",
+    "dns",
+    "reverse-proxy"
   ],
   "author": "Wataru Nishimura",
   "license": "Apache-2.0",
+  "publishConfig": {
+    "access": "public"
+  },
   "repository": {
     "type": "git",
-    "url": "https://github.com/WataruNishimura/portless.git"
+    "url": "https://github.com/WataruNishimura/labelhost.git"
   },
-  "homepage": "https://github.com/WataruNishimura/portless",
+  "homepage": "https://github.com/WataruNishimura/labelhost",
   "bugs": {
-    "url": "https://github.com/WataruNishimura/portless/issues"
+    "url": "https://github.com/WataruNishimura/labelhost/issues"
   },
   "devDependencies": {
     "@types/node": "^24.12.4",

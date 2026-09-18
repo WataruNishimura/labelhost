@@ -40,7 +40,7 @@ Since you own `ctate.dev`, nothing under `local.ctate.dev` will conflict with re
 ### 1. Install labelhost
 
 ```bash
-npm install -g labelhost
+npm install -g @_n13u_/labelhost
 ```
 
 ### 2. Start the proxy

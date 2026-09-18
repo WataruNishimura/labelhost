@@ -25,10 +25,10 @@ Install globally (recommended) or as a project dev dependency. Do NOT use `npx` 
 
 ```bash
 # Global (available everywhere)
-npm install -g labelhost
+npm install -g @_n13u_/labelhost
 
 # Or per-project dev dependency
-npm install -D labelhost
+npm install -D @_n13u_/labelhost
 ```
 
 When installed per-project, invoke via package.json scripts or `npx labelhost` (since the package is local, npx will not download anything).
@@ -37,7 +37,7 @@ When installed per-project, invoke via package.json scripts or `npx labelhost` (
 
 ```bash
 # Install globally (or add -D to a project)
-npm install -g labelhost
+npm install -g @_n13u_/labelhost
 
 # Run your app (auto-starts the HTTPS proxy on port 443)
 labelhost run next dev
@@ -355,7 +355,7 @@ Config can be written in [Pkl](https://pkl-lang.org) instead of JSON. Put a
 `labelhost.pkl` next to your `package.json` and amend the shipped schema:
 
 ```pkl
-amends "https://raw.githubusercontent.com/WataruNishimura/portless/main/packages/labelhost/pkl/Labelhost.pkl"
+amends "https://raw.githubusercontent.com/WataruNishimura/labelhost/main/packages/labelhost/pkl/Labelhost.pkl"
 
 name = "myapp"
 hostnameTemplate = "{{worktree}}.{{name}}.dev"

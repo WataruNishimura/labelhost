@@ -1,4 +1,4 @@
-const REPO = "WataruNishimura/portless";
+const REPO = "WataruNishimura/labelhost";
 const REVALIDATE = 86400;
 
 export async function getStarCount(): Promise<string> {

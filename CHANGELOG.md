@@ -1,8 +1,27 @@
 # Changelog
 
-## 0.15.5
+## 1.0.0
 
 <!-- release:start -->
+
+First release of labelhost, a fork of [Vercel Labs' portless](https://github.com/vercel-labs/portless) published under its own name. Version numbering restarts at 1.0.0 and no longer tracks upstream's.
+
+### Breaking Changes
+
+- **Renamed from portless**: The CLI, npm package, and every machine-global identifier are renamed so this fork installs and runs alongside upstream portless without colliding. The package publishes as `@_n13u_/labelhost` under a scope rather than claiming the bare `labelhost` name on npm, and installs a `labelhost` command. The state directory moves to `~/.labelhost`, the launchd label to `dev.labelhost.proxy`, the systemd unit to `labelhost.service`, and the local CA to "labelhost Local CA" in `labelhost-ca.crt`. Environment variables use the `LABELHOST_` prefix, and the bypass switch is `LABELHOST`. Upstream's `PORTLESS_*` variables are not read; a machine already running upstream portless needs its CA trusted and its service installed again under the new names.
+
+### Features
+
+- **Hostname templates**: `hostnameTemplate` sets a per-app hostname pattern from `{{name}}` and `{{worktree}}` placeholders, evaluated before the proxy TLD is appended. A missing worktree prefix removes its whole dot-delimited label, so `{{worktree}}.{{name}}.dev` gives `myapp.dev.localhost` in the primary checkout and `feature-auth.myapp.dev.localhost` in a linked worktree.
+- **Pkl config**: A `labelhost.pkl` amending the shipped `Labelhost.pkl` schema takes priority over JSON config. Amending the schema turns a misspelled property or an out-of-range `appPort` into an evaluation error naming the offending line, instead of a JSON key that is silently ignored. Evaluation shells out to the `pkl` CLI, which only projects using a `.pkl` file need installed; `LABELHOST_PKL_BIN` overrides the binary. A `labelhost.pkl` that exists but fails to evaluate is reported as a config error rather than skipped.
+
+### Compatibility
+
+- **Upstream config still reads**: Config resolution falls through `labelhost.pkl`, `labelhost.json`, `portless.json`, then a `"labelhost"` or `"portless"` key in `package.json`, so a project already set up for upstream portless works unchanged. A workspace package whose dev script invokes either name is recognised as self-managed rather than proxied twice.
+- **License text now ships**: `LICENSE` and `NOTICE` are included in the published tarball. `NOTICE` records the upstream copyright and the changes made here, as Apache-2.0 section 4 requires.
+<!-- release:end -->
+
+## 0.15.5
 
 ### Bug Fixes
 
@@ -15,7 +34,6 @@
 - @KingPsychopath
 - @erichurkman
 - @sanjevirau
-<!-- release:end -->
 
 ## 0.15.4
 
