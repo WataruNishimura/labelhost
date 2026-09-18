@@ -2474,7 +2474,7 @@ describe("npx guard", () => {
   });
 
   it("allows npx when the scoped package is installed locally", () => {
-    const dir = withNodeModules("@n13u/labelhost");
+    const dir = withNodeModules("@_n13u_/labelhost");
     try {
       const result = runAsNpx(dir);
       expect(result.status).toBe(0);

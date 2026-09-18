@@ -388,7 +388,7 @@ function getEntryScript(): string {
 
 /**
  * Check whether labelhost is installed as a project dependency by walking
- * up from cwd looking for node_modules/@n13u/labelhost, or the unscoped
+ * up from cwd looking for node_modules/@_n13u_/labelhost, or the unscoped
  * node_modules/labelhost left by an install from before the package was
  * scoped. Used to distinguish a local `npx labelhost` (allowed) from a
  * one-off download (blocked).
@@ -406,7 +406,7 @@ function isLocallyInstalled(): boolean {
   let dir = process.cwd();
   for (;;) {
     const nodeModules = path.join(dir, "node_modules");
-    for (const pkg of ["@n13u/labelhost", "labelhost"]) {
+    for (const pkg of ["@_n13u_/labelhost", "labelhost"]) {
       if (fs.existsSync(path.join(nodeModules, pkg, "package.json"))) {
         return true;
       }
@@ -1770,8 +1770,8 @@ Eliminates port conflicts, memorizing port numbers, and cookie/storage
 clashes by giving each dev server a stable .localhost URL.
 
 ${colors.bold("Install:")}
-  ${colors.cyan("npm install -g @n13u/labelhost")}    Global (recommended)
-  ${colors.cyan("npm install -D @n13u/labelhost")}    Project dev dependency
+  ${colors.cyan("npm install -g @_n13u_/labelhost")}  Global (recommended)
+  ${colors.cyan("npm install -D @_n13u_/labelhost")}  Project dev dependency
 
 ${colors.bold("Requirements:")}
   Node.js 24+
@@ -4212,8 +4212,8 @@ async function main() {
   if ((isNpx || isPnpmDlx) && !isLocallyInstalled()) {
     console.error(colors.red("Error: labelhost should not be run via npx or pnpm dlx."));
     console.error(colors.blue("Install globally or as a project dependency:"));
-    console.error(colors.cyan("  npm install -g @n13u/labelhost"));
-    console.error(colors.cyan("  npm install -D @n13u/labelhost"));
+    console.error(colors.cyan("  npm install -g @_n13u_/labelhost"));
+    console.error(colors.cyan("  npm install -D @_n13u_/labelhost"));
     process.exit(1);
   }
 
