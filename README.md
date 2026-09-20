@@ -36,7 +36,7 @@ npm install -g @_n13u_/labelhost
 npm install -D @_n13u_/labelhost
 ```
 
-> labelhost is pre-1.0. When installed per-project, different contributors may run different versions. The state directory format may change between releases, which can require re-running `labelhost trust`.
+> When installed per-project, different contributors may run different versions. The state directory format may change between releases, which can require re-running `labelhost trust`.
 
 ## Run your app
 
