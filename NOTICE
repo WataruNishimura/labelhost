@@ -24,9 +24,13 @@ Modifications made in this fork, relative to the upstream project:
     variable prefix (LABELHOST_*).
   - Configuration gained a per-app "hostnameTemplate" field supporting
     {{name}} and {{worktree}} placeholders.
-  - Configuration is read from labelhost.json, falling back to portless.json
-    and to a "labelhost" or "portless" key in package.json, so projects
-    already configured for upstream portless keep working.
+  - Configuration can be written in Pkl (labelhost.pkl), amending a schema
+    shipped in the package (pkl/Labelhost.pkl) so invalid config fails at
+    evaluation time.
+  - Configuration is read from labelhost.pkl, then labelhost.json, falling
+    back to portless.json and to a "labelhost" or "portless" key in
+    package.json, so projects already configured for upstream portless keep
+    working. PORTLESS_* environment variables are not read.
 
 "portless" and "Vercel" are names of the upstream project and its authors.
 This fork is not affiliated with, endorsed by, or supported by Vercel Inc.
