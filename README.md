@@ -12,13 +12,13 @@ Replace port numbers with stable, named .localhost URLs for local development. F
 **Global (recommended):**
 
 ```bash
-npm install -g labelhost
+npm install -g @_n13u_/labelhost
 ```
 
 **Or as a project dev dependency:**
 
 ```bash
-npm install -D labelhost
+npm install -D @_n13u_/labelhost
 ```
 
 > labelhost is pre-1.0. When installed per-project, different contributors may run different versions. The state directory format may change between releases, which can require re-running `labelhost trust`.
@@ -105,7 +105,7 @@ Instead of JSON, config can be written in [Pkl](https://pkl-lang.org). Put a
 `labelhost.pkl` next to your `package.json` and amend the shipped schema:
 
 ```pkl
-amends "https://raw.githubusercontent.com/WataruNishimura/portless/main/packages/labelhost/pkl/Labelhost.pkl"
+amends "https://raw.githubusercontent.com/WataruNishimura/labelhost/main/packages/labelhost/pkl/Labelhost.pkl"
 
 name = "myapp"
 hostnameTemplate = "{{worktree}}.{{name}}.dev"

@@ -34,6 +34,8 @@ When a change affects how humans or agents use labelhost (new/changed/removed co
 
 Releases are manual, single-PR affairs. The maintainer controls the changelog voice and format.
 
+Versions are this fork's own and do not track upstream portless. Numbering restarted at 1.0.0.
+
 To prepare a release:
 
 1. Create a branch (e.g. `prepare-v1.2.0`)
@@ -41,9 +43,31 @@ To prepare a release:
 3. Write the changelog entry in `CHANGELOG.md`, wrapped in `<!-- release:start -->` and `<!-- release:end -->` markers
 4. Remove the `<!-- release:start -->` and `<!-- release:end -->` markers from the previous release entry (only the latest release should have markers)
 5. Add a matching entry to `apps/docs/src/app/changelog/page.mdx`
-6. Open a PR and merge to `main`
+6. Open a PR and merge to `main`, which stages the package
+7. Approve the staged package with 2FA, which is what publishes it
+8. Run the Release workflow from the Actions tab to create the GitHub release
 
-CI compares the version in `packages/labelhost/package.json` to what's on npm. If it differs, it builds, publishes, and creates the GitHub release automatically. The release body is extracted from the content between the markers.
+Merging the release PR does not publish. `.github/workflows/release.yml` stages the package, and a maintainer approves it with 2FA. The release body is extracted from the content between the markers.
+
+### Publish routes
+
+There are two routes to npm.
+
+**Workflow route (default), in two steps.** Merging the release PR to main runs `.github/workflows/release.yml`, which runs `npm stage publish --provenance`. Staging uploads the package but leaves it non-public, and never prompts for 2FA, which is what lets it run unattended. The version is not installable yet. A maintainer then approves it, from the Staged Packages tab on npmjs.com or with `npm stage list` and `npm stage approve <stage-id>`, and npm prompts for 2FA either way. Once npm serves the version, run the Release workflow again from the Actions tab to create the GitHub release.
+
+The workflow authenticates with the `NPM_TOKEN` secret when that secret is set on the `Release` environment, and otherwise falls back to npm trusted publishing over OIDC. Configure one of the two, or the stage step has no credentials. The trust relationship needs `--allow-stage-publish`; `--allow-publish` is not required and npm recommends leaving it off.
+
+Approval cannot be automated, by design. A trust relationship's shortlived token may run `npm stage publish` and `npm publish` but no other `npm stage` subcommand, so CI cannot list or approve staged packages even with a token.
+
+**Manual route.** `pnpm release:manual` runs `scripts/publish.sh`, which publishes directly from a local machine, skipping staging. It runs under your own session token, so the trust relationship's permissions do not apply and npm prompts for 2FA itself. Use it when the workflow route cannot run, most notably for the first publish of a new package name: neither trusted publishing nor staging can bootstrap one, since both require the package to already exist. The script refuses a dirty tree, a version already on npm, and a changelog with no release markers, then runs the same checks CI would.
+
+The two routes do not conflict. `check-release` stages nothing when the local version already matches npm, so a manual publish followed by a merge to main still creates the GitHub release. A manually published version carries no provenance, because npm only attests builds that ran in a supported CI environment, so prefer the workflow route once it authenticates.
+
+### What the workflow decides
+
+`check-release` stages only on the commit that bumps the version, or on a manual dispatch. A staged version is not public, so npm never reports it and the job cannot ask, and staging the same version twice is an error; without that rule every unrelated push to main would retry the stage while an approval is pending. A dispatch forces a retry when a stage fails.
+
+The GitHub release is held back until npm actually serves the version, so it never announces something nobody can install. That is why creating it takes a second run after approval.
 
 ## Windows Debugging
 

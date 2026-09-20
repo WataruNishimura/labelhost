@@ -2,7 +2,7 @@
 ///
 /// Write `labelhost.pkl` next to your `package.json` and amend this module:
 ///
-///     amends "https://raw.githubusercontent.com/WataruNishimura/portless/main/packages/labelhost/pkl/Labelhost.pkl"
+///     amends "https://raw.githubusercontent.com/WataruNishimura/labelhost/main/packages/labelhost/pkl/Labelhost.pkl"
 ///
 ///     name = "myapp"
 ///     hostnameTemplate = "{{worktree}}.{{name}}.dev"

@@ -15,5 +15,6 @@ scripts/windows-debug/.instance
 opensrc/
 
 # Copied into the package at publish time by prepublishOnly
+packages/labelhost/README.md
 packages/labelhost/LICENSE
 packages/labelhost/NOTICE

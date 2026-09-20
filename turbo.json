@@ -13,7 +13,7 @@
       "dependsOn": ["build"]
     },
     "test:e2e": {
-      "dependsOn": ["labelhost#build"],
+      "dependsOn": ["@_n13u_/labelhost#build"],
       "cache": false
     },
     "test:coverage": {
