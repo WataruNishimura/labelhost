@@ -581,19 +581,21 @@ Labelhost detects this misconfiguration and responds with `508 Loop Detected` al
 
 ## Development
 
-This repo is a pnpm workspace monorepo using [Turborepo](https://turbo.build). The publishable package lives in `packages/labelhost/`.
+This repo is a pnpm workspace monorepo using [Turborepo](https://turbo.build), driven through the [Vite+](https://viteplus.dev) CLI (`vp`). The publishable package lives in `packages/labelhost/`.
 
-Use Node.js 24+ and pnpm 11 for repository development. The `.node-version` file pins the Node major for version managers.
+Install `vp` once (`curl -fsSL https://vite.plus | bash`, or `irm https://vite.plus/ps1 | iex` on Windows). It reads `.node-version` and the `packageManager` field and fetches the matching Node.js 24 and pnpm 11 itself, so nothing else needs to be installed by hand. The root scripts wrap turbo, so `vp run <script>` fans out across the workspace:
 
 ```bash
-pnpm install          # Install all dependencies
-pnpm build            # Build all packages
-pnpm test             # Run tests
-pnpm test:coverage    # Run tests with coverage
-pnpm lint             # Lint all packages
-pnpm type-check       # Type-check all packages
-pnpm format           # Format all files with Prettier
+vp install            # Install all dependencies
+vp run build          # Build all packages (turbo build)
+vp run test           # Run tests (turbo test)
+vp run test:coverage  # Run tests with coverage
+vp run lint           # Lint all packages (turbo lint)
+vp run type-check     # Type-check all packages
+vp run format         # Format all files with Prettier
 ```
+
+Always go through `vp run <script>`. The `vp dev`, `vp build`, `vp test`, `vp lint`, and `vp fmt` built-ins run Vite's own tooling directly and bypass turbo and Prettier.
 
 ### Syncing with upstream
 

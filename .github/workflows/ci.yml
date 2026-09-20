@@ -16,30 +16,25 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-node@v4
+      - uses: voidzero-dev/setup-vp@v1.21.0
         with:
           node-version-file: .node-version
+          cache: true
+          run-install: false
 
-      - uses: pnpm/action-setup@v4
+      - run: vp install --frozen-lockfile
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version-file: .node-version
-          cache: pnpm
+      - run: vp run format:check
 
-      - run: pnpm install --frozen-lockfile
+      - run: vp run lint
 
-      - run: pnpm format:check
+      - run: vp run type-check
 
-      - run: pnpm lint
+      - run: vp run build
 
-      - run: pnpm type-check
+      - run: vp run test
 
-      - run: pnpm build
-
-      - run: pnpm test
-
-      - run: pnpm test:e2e
+      - run: vp run test:e2e
 
   ci-windows:
     runs-on: windows-latest
@@ -47,24 +42,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
+      - uses: voidzero-dev/setup-vp@v1.21.0
         with:
           node-version-file: .node-version
+          cache: true
+          run-install: false
 
-      - uses: pnpm/action-setup@v4
+      - run: vp install --frozen-lockfile
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version-file: .node-version
-          cache: pnpm
+      - run: vp run type-check
 
-      - run: pnpm install --frozen-lockfile
+      - run: vp run build
 
-      - run: pnpm type-check
-
-      - run: pnpm build
-
-      - run: pnpm test
+      - run: vp run test
 
       - name: Install and verify the Windows service
         shell: pwsh

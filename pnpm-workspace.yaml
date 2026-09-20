@@ -17,3 +17,11 @@ packages:
   - "apps/*"
   - "tests/*"
   - "examples/*"
+
+peerDependencyRules:
+  allowedVersions:
+    # vite-plus aliases `vite` to @voidzero-dev/vite-plus-core, whose 0.x
+    # version never matches the upstream-Vite range that the bundled vitest
+    # declares. Scoped to that pair so other vite peers stay checked.
+    "vitest>vite": "*"
+    "@vitest/mocker>vite": "*"

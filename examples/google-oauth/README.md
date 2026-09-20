@@ -85,8 +85,8 @@ openssl rand -base64 32
 ### 5. Install and run
 
 ```bash
-pnpm install
-pnpm dev
+vp install
+vp run dev
 ```
 
 This runs `labelhost oauth-test next dev`, which serves the app at `https://oauth-test.dev`.

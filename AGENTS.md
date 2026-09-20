@@ -2,13 +2,15 @@
 
 ## Package Manager
 
-Use `pnpm` for all package management commands (not npm or yarn).
+Use `vp` (Vite+) for all package management commands: `vp install`, `vp add`, `vp run <script>`, `vp exec <bin>`. It delegates to the pnpm version pinned in `packageManager`, so never call `pnpm`, `npm`, or `yarn` directly.
+
+The root scripts (`build`, `test`, `lint`, `type-check`, and so on) wrap turbo. Run them with `vp run <script>`, never with the `vp dev` / `vp build` / `vp test` / `vp lint` / `vp fmt` built-ins, which run Vite's own tooling and bypass turbo and Prettier.
 
 Exception: End-user install instructions should use `npm install -g` (global) or `npm install -D` (project dev dependency) since npm is universal.
 
 ## Dependencies
 
-Always check for the latest npm version when adding dependencies. Use `pnpm add <package>` (without version) to get the latest, or verify with `npm view <package> version` first.
+Always check for the latest npm version when adding dependencies. Use `vp add <package>` (without version) to get the latest, or verify with `vp info <package> version` first.
 
 ## No Emojis
 
@@ -59,7 +61,7 @@ The workflow authenticates with the `NPM_TOKEN` secret when that secret is set o
 
 Approval cannot be automated, by design. A trust relationship's shortlived token may run `npm stage publish` and `npm publish` but no other `npm stage` subcommand, so CI cannot list or approve staged packages even with a token.
 
-**Manual route.** `pnpm release:manual` runs `scripts/publish.sh`, which publishes directly from a local machine, skipping staging. It runs under your own session token, so the trust relationship's permissions do not apply and npm prompts for 2FA itself. Use it when the workflow route cannot run, most notably for the first publish of a new package name: neither trusted publishing nor staging can bootstrap one, since both require the package to already exist. The script refuses a dirty tree, a version already on npm, and a changelog with no release markers, then runs the same checks CI would.
+**Manual route.** `vp run release:manual` runs `scripts/publish.sh`, which publishes directly from a local machine, skipping staging. It runs under your own session token, so the trust relationship's permissions do not apply and npm prompts for 2FA itself. Use it when the workflow route cannot run, most notably for the first publish of a new package name: neither trusted publishing nor staging can bootstrap one, since both require the package to already exist. The script refuses a dirty tree, a version already on npm, and a changelog with no release markers, then runs the same checks CI would.
 
 The two routes do not conflict. `check-release` stages nothing when the local version already matches npm, so a manual publish followed by a merge to main still creates the GitHub release. A manually published version carries no provenance, because npm only attests builds that ran in a supported CI environment, so prefer the workflow route once it authenticates.
 
