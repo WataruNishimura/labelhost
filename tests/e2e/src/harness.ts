@@ -148,7 +148,7 @@ export async function startApp(opts: StartAppOptions): Promise<E2EContext> {
 
   if (!fs.existsSync(CLI_PATH)) {
     throw new Error(
-      `Built CLI not found at ${CLI_PATH}. Run 'pnpm build' in packages/labelhost first.`
+      `Built CLI not found at ${CLI_PATH}. Run 'vp run build' in packages/labelhost first.`
     );
   }
 

@@ -60,12 +60,12 @@ fi
 # The workflow route gets these checks from ci.yml before the merge that
 # triggers it. This route bypasses CI, so run them here.
 echo "Running checks..."
-pnpm install --frozen-lockfile
-pnpm format:check
-pnpm lint
-pnpm type-check
-pnpm build
-pnpm test
+vp install --frozen-lockfile
+vp run format:check
+vp run lint
+vp run type-check
+vp run build
+vp run test
 
 echo
 echo "Checks passed. Publishing..."

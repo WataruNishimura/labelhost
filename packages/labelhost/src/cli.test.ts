@@ -179,7 +179,9 @@ async function stopChild(child: ReturnType<typeof spawn>): Promise<void> {
 describe("CLI", () => {
   beforeAll(() => {
     if (!fs.existsSync(CLI_PATH)) {
-      throw new Error(`Built CLI not found at ${CLI_PATH}. Run 'pnpm build' before running tests.`);
+      throw new Error(
+        `Built CLI not found at ${CLI_PATH}. Run 'vp run build' before running tests.`
+      );
     }
   });
 
